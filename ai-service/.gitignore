@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+data/uploads/
+data/annotated/
+data/*.db
+data/*.jpg
+data/*.png
+data/hh/
+models/*.pt
+models/.cache/
+*.pt
+.DS_Store
+
+cloudflared
+
