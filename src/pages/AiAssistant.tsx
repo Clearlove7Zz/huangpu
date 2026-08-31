@@ -484,6 +484,57 @@ useEffect(() => {
     });
   };
 
+  /** 空回答重新生成：后端 LLM 失败/超时导致 0 字回答时，复用原问题重跑同一条消息 */
+  const retryGeneration = (message: ChatMsg) => {
+    if (busy) return;
+    const sessionId = active.id;
+    const msgs = active.messages;
+    const idx = msgs.findIndex((item) => item.id === message.id);
+    let query = '';
+    for (let i = idx - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        query = msgs[i].content;
+        break;
+      }
+    }
+    if (!query.trim()) return;
+    shouldFollowRef.current = true;
+    setBusy(true);
+    setAssistantState('understanding');
+    updateSession(sessionId, (session) => ({
+      ...session,
+      messages: session.messages.map((item) => item.id === message.id ? {
+        ...item,
+        content: '',
+        references: undefined,
+        artifacts: undefined,
+        gatewayAudit: undefined,
+        interrupted: false,
+        remoteMessageId: undefined,
+        timeline: [],
+        streaming: true,
+        startedAt: Date.now(),
+        endedAt: undefined,
+        source: undefined,
+      } : item),
+    }));
+    const handlers = makeStreamHandlers(sessionId, message.id);
+    void chatWithRag(query, activeRagSessionId ?? active.ragSessionId ?? null, handlers.chatCallbacks, {
+      knowledgeBaseIds: selectedKbIds,
+      agentId: selectedAgentId || undefined,
+      agentEnabled: selectedAgentId !== 'builtin-quick-answer',
+    }).then(async (outcome) => {
+      if (outcome.sessionId) {
+        setActiveRagSessionId(outcome.sessionId);
+        updateSession(sessionId, (session) => ({ ...session, ragSessionId: outcome.sessionId ?? undefined }));
+      }
+      if (outcome.source === 'rag' && outcome.sessionId && handlers.getLastMessageId()) {
+        const artifacts = await listMessageArtifacts(outcome.sessionId, handlers.getLastMessageId());
+        if (artifacts.length) updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((item) => item.id === message.id ? { ...item, artifacts } : item) }));
+      }
+    });
+  };
+
   /** 意外中断后的"继续生成"：走 continue-stream 从服务端事件缓存接回 */
   const resumeGeneration = (message: ChatMsg) => {
     const ragSessionId = activeRagSessionId ?? active.ragSessionId;
@@ -611,6 +662,9 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
               {message.gatewayAudit && !message.streaming && <div className={`ai-gateway-audit ai-gateway-audit-${message.gatewayAudit.verdict}`}>{message.gatewayAudit.verdict === 'pass' ? '✓ ' : '⚠ '}{message.gatewayAudit.message}</div>}
               {message.interrupted && message.remoteMessageId && !message.streaming && (
                 <button type="button" className="ai-resume-btn" onClick={() => resumeGeneration(message)}>↻ 继续生成（连接中断，从服务端接回）</button>
+              )}
+              {!message.streaming && message.role === 'ai' && !message.content.trim() && (
+                <button type="button" className="ai-retry-btn" onClick={() => retryGeneration(message)}>↻ 重新生成（上次回答生成失败，内容为空）</button>
               )}
               {message.artifacts && <ArtifactList artifacts={message.artifacts} onDownload={async (artifact) => {
                 const remoteSessionId = activeRagSessionId ?? active.ragSessionId;

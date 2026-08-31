@@ -533,3 +533,7 @@ button.ai-tree-title:hover .ai-tree-name { color: #e07b39; }
 /* "继续生成"按钮：流意外中断后出现，走 continue-stream 从服务端接回 */
 .ai-resume-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; padding: 4px 12px; border: 1px solid #f2d3a8; border-radius: 999px; background: #fff7ec; color: #a35200; font-size: 12px; line-height: 18px; cursor: pointer; transition: background-color .15s, border-color .15s; }
 .ai-resume-btn:hover { background: #ffefd8; border-color: #e7b878; }
+
+/* "重新生成"按钮：回答生成失败（0 字内容）时出现，复用原问题重跑 */
+.ai-retry-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; padding: 4px 12px; border: 1px solid #f2c1bd; border-radius: 999px; background: #fdf2f1; color: #b3261e; font-size: 12px; line-height: 18px; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.ai-retry-btn:hover { background: #fce8e6; border-color: #e8a19b; }
