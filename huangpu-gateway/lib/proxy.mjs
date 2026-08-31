@@ -94,28 +94,40 @@ export function proxyPassthrough({ clientReq, clientRes, target, path }) {
   clientReq.pipe(up);
 }
 
-/** 解析一个 SSE 事件块，更新旁路累积器 */
+/** 解析一个 SSE 事件块：更新旁路累积器；回答/完成块被扣留（返回 'answer'|'complete'），其余放行（返回 null） */
 function feedBlock(block, tap) {
   const dataLines = [];
   for (const line of block.split('\n')) {
     if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
   }
-  if (!dataLines.length) return;
+  if (!dataLines.length) return null;
   let payload;
   try {
     payload = JSON.parse(dataLines.join('\n'));
   } catch {
-    return; // 非 JSON 事件忽略
+    return null; // 非 JSON 事件忽略
   }
   if (payload.response_type === 'answer' && typeof payload.content === 'string') {
     tap.answerText += payload.content;
-  } else if (payload.response_type === 'tool_call') {
+    tap.heldAnswer += payload.content;
+    return 'answer';
+  }
+  if (payload.response_type === 'complete') {
+    tap.heldComplete = block;
+    return 'complete';
+  }
+  if (payload.response_type === 'tool_call') {
     tap.sawToolCall = true;
   }
+  return null;
 }
 
 /**
  * 问答代理（POST /api/v1/knowledge-chat|agent-chat/:sid），支持打回重算。
+ * 数值铁律的呈现层保证：answer 增量与 complete 信号先扣留不下发，思考/检索/工具
+ * 事件实时转发（保活前端空闲看门狗，扣留期间以 SSE 注释心跳保连接）；流结束后
+ * 由 onComplete 裁决——通过才放行正文，打回则整段丢弃进入下一轮，用户永远
+ * 看不到未经引擎背书的推演数字。
  * @param injectedEvents 首轮预注入事件（网关引擎 tool_call/tool_result）
  * @param onComplete 流结束回调：入参 {tap, attempt}，可返回
  *   { appendEvents, followUp?: {path, bodyStr} }——followUp 存在且未超次数时，
@@ -148,25 +160,44 @@ export function proxyQa({ clientRes, target, path, bodyStr, injectedEvents, onCo
       }
       for (const ev of currentInjected) clientRes.write(ev);
 
-      const tap = { answerText: '', sawToolCall: false, leftover: '' };
+      const tap = { answerText: '', heldAnswer: '', heldComplete: '', sawToolCall: false, leftover: '' };
       const dec = new TextDecoder('utf-8');
-      const feed = (raw) => {
-        tap.leftover += raw;
+      const emitBlock = (block) => {
+        const held = feedBlock(block, tap);
+        if (held) clientRes.write(': kb\n\n'); // SSE 注释心跳：不产生事件，仅保活
+        else clientRes.write(block + '\n\n');
+      };
+      const drain = (final) => {
         let idx;
         while ((idx = tap.leftover.indexOf('\n\n')) !== -1) {
           const block = tap.leftover.slice(0, idx);
           tap.leftover = tap.leftover.slice(idx + 2);
-          feedBlock(block, tap);
+          emitBlock(block);
+        }
+        if (final && tap.leftover.trim()) {
+          emitBlock(tap.leftover);
+          tap.leftover = '';
         }
       };
+      /** 对账通过后放行正文：切成小块模拟流式输出 */
+      const flushAnswer = (text) => {
+        for (let i = 0; i < text.length; i += 80) {
+          clientRes.write(sseEvent({ response_type: 'answer', content: text.slice(i, i + 80) }));
+        }
+      };
+      const finalizeAndClose = (result) => {
+        if (tap.heldAnswer) flushAnswer(tap.heldAnswer);
+        for (const ev of result.appendEvents ?? []) clientRes.write(ev);
+        if (tap.heldComplete) clientRes.write(tap.heldComplete + '\n\n');
+        clientRes.end();
+      };
       upRes.on('data', (c) => {
-        const s = dec.decode(c, { stream: true });
-        feed(s);
-        clientRes.write(s);
+        tap.leftover += dec.decode(c, { stream: true });
+        drain(false);
       });
       upRes.on('end', async () => {
-        feed(dec.decode());
-        if (tap.leftover.trim()) feedBlock(tap.leftover, tap);
+        tap.leftover += dec.decode();
+        drain(true);
         let result = { appendEvents: [] };
         try {
           result = (await onComplete({ tap, attempt: attempts })) ?? result;
@@ -178,7 +209,7 @@ export function proxyQa({ clientRes, target, path, bodyStr, injectedEvents, onCo
           run(result.followUp.path, result.followUp.bodyStr, []);
           return; // 客户端流由下一次尝试收尾
         }
-        clientRes.end();
+        finalizeAndClose(result);
       });
     });
     up.on('error', (err) => {

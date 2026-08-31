@@ -21,7 +21,7 @@
 |------|----------|------|
 | ① 认证 + 角色调度 | `lib/auth.mjs` + `lib/rbac.mjs` + `server.mjs` handleQa | demo 登录签发 HMAC 令牌；智能体白名单（白名单外 403，未指定注入角色默认）；知识库按角色关键词过滤；无利润权限的角色问利润直接 403 |
 | ② 凭据持有 | `.env` + `lib/proxy.mjs` | WeKnora scoped key 只在网关 `.env`（已 gitignore），浏览器仅持网关令牌，接触不到上游 key |
-| ③ 输出对账 | `lib/reconcile.mjs` + `lib/proxy.mjs` proxyQa | 旁路监听回答流：利润/推演类问题先由网关代调引擎（`run_scenario` 工具事件注入流内）；流结束后，回答中的**百分数**必须逐位出自引擎结果或常量白名单（16.66/5），否则裁决见下 |
+| ③ 输出对账 | `lib/reconcile.mjs` + `lib/proxy.mjs` proxyQa | 旁路监听回答流：利润/推演类问题先由网关代调引擎（`run_scenario` 工具事件注入流内）；流结束后，回答中的**百分数**必须逐位出自引擎结果或常量白名单（16.66/5），否则裁决见下。回答正文缓冲至对账通过才下发（打回则整段丢弃重答）——未背书数字不出现在用户界面 |
 | ④ 审计 | `server.mjs` audit() | 登录/问答/两类拦截全部落 `logs/gateway-audit.jsonl`（一行一 JSON） |
 
 对账裁决（`response_type: gateway_audit` 事件回写前端）：

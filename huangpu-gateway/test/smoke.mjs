@@ -112,11 +112,21 @@ try {
   check('T4b 回答数字与引擎一致且对账 pass', ok.text.includes('16.07%') && ok.text.includes('"verdict":"pass"'), `HTTP ${ok.status}`);
 
   // T5 情景推演问题含引擎外数字 → 打回重算（第二轮 mock 给出正确答案 → 最终 pass）
+  // 数值铁律呈现层：第一轮未背书正文（25.3%）必须全程不出现在客户端流中
   const bad2 = await qa(tokAI, '/api/v1/knowledge-chat/s2', { query: '伪造测试：新联01钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'] });
   check(
     'T5 情景推演数字不一致打回重算且二轮通过',
     bad2.text.includes('gateway_retry') && bad2.text.includes('16.07%') && bad2.text.includes('"verdict":"pass"'),
   );
+  // T5b+ 数值铁律呈现层：解析客户端流中的回答正文事件，被打回的首轮数字不得出现
+  let renderedAnswer = '';
+  for (const m of bad2.text.matchAll(/^data: (.+)$/gm)) {
+    try {
+      const p = JSON.parse(m[1]);
+      if (p.response_type === 'answer') renderedAnswer += p.content ?? '';
+    } catch { /* 忽略非 JSON 行 */ }
+  }
+  check('T5b+ 被打回的首轮正文未泄漏到客户端', !renderedAnswer.includes('25.3%') && renderedAnswer.includes('16.07%'));
 
   // T5b 利润问题但回答无任何数字 → na（不回写对账横幅，避免"无意义绿灯"）
   const noNum = await qa(tokAI, '/api/v1/knowledge-chat/s2b', { query: '新联01利润率受什么因素影响（无数）', knowledge_base_ids: ['kb-1'] });
