@@ -33,6 +33,8 @@ export interface ChatCallbacks {
   onMessageId?: (messageId: string) => void;
   /** 用户主动停止（不触发本地兜底） */
   onAbort?: () => void;
+  /** 流被意外中断（空闲超时/断网，非用户停止）：后端可能仍在生成，可提供"继续生成" */
+  onInterrupted?: (info: { sessionId: string }) => void;
   /** 降级本地：完整答案（调用方自行做打字机效果） */
   onLocalAnswer?: (answer: AiAnswer) => void;
   /** 全部完成（自然结束或错误降级后） */
@@ -110,6 +112,7 @@ export async function chatWithRag(
       onGatewayAudit: (audit) => callbacks.onGatewayAudit?.(audit),
       onMessageId: (messageId) => callbacks.onMessageId?.(messageId),
       onAbort: () => callbacks.onAbort?.(),
+      onInterrupted: (info) => callbacks.onInterrupted?.(info),
       onError: () => {
         // 远端失败：若已收到部分内容则保留，否则降级本地
         if (!usedRemote) {

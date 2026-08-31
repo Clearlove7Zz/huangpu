@@ -529,3 +529,7 @@ button.ai-tree-title:hover .ai-tree-name { color: #e07b39; }
 .ai-gateway-audit-pass { color: #1f7a3d; background: #f0faf3; border-color: #bfe6cb; }
 .ai-gateway-audit-mismatch { color: #a35200; background: #fff7ec; border-color: #f2d3a8; }
 .ai-gateway-audit-reject { color: #b3261e; background: #fdf2f1; border-color: #f2c1bd; }
+
+/* "继续生成"按钮：流意外中断后出现，走 continue-stream 从服务端接回 */
+.ai-resume-btn { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; padding: 4px 12px; border: 1px solid #f2d3a8; border-radius: 999px; background: #fff7ec; color: #a35200; font-size: 12px; line-height: 18px; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.ai-resume-btn:hover { background: #ffefd8; border-color: #e7b878; }

@@ -30,6 +30,9 @@ export interface RagStreamEvents {
   onError?: (message: string) => void;
   /** 用户主动停止（abort 后触发，区别于"自然结束 onDone"，避免触发本地兜底） */
   onAbort?: () => void;
+  /** 流被意外中断（空闲超时/连接断开，非用户主动停止）：
+   *  后端可能仍在生成（旧版超时路径不通知后端停止），可走 continue-stream 断线续流接回 */
+  onInterrupted?: (info: { sessionId: string }) => void;
   onDone?: () => void;
 }
 
@@ -40,8 +43,37 @@ const currentAbortRef: { controller: AbortController | null; sessionId: string; 
   messageId: '',
 };
 
+/** 当前流的空闲看门狗停止函数（abortCurrentRag 需要连看门狗一起清掉） */
+let activeWatchdogStop: (() => void) | null = null;
+
+/** 是否为用户主动停止：手动"停止生成"置位；用于把用户停止与空闲超时/断网区分开 */
+let userStopRequested = false;
+
+/**
+ * 空闲看门狗：timeoutMs 内没有任何流活动（建连/任意数据块）才触发 onTimeout。
+ * 替代旧版"总时长超时"——agent 深度推理经常超过 90 秒，按总时长掐会误截断长回答（PRD M2.0 缺陷）。
+ */
+function createIdleWatchdog(timeoutMs: number, onTimeout: () => void): { kick: () => void; stop: () => void } {
+  let timer: number | null = null;
+  const stop = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+    if (activeWatchdogStop === stop) activeWatchdogStop = null;
+  };
+  const kick = () => {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = window.setTimeout(onTimeout, timeoutMs);
+  };
+  activeWatchdogStop = stop;
+  return { kick, stop };
+}
+
 /** 中断当前 RAG 流 + 通知 WeKnora 后端停止生成（前端停止生成按钮调用） */
 export function abortCurrentRag(): void {
+  userStopRequested = true;
+  activeWatchdogStop?.();
   try {
     currentAbortRef.controller?.abort();
   } catch {
@@ -52,7 +84,8 @@ export function abortCurrentRag(): void {
   currentAbortRef.sessionId = '';
   currentAbortRef.messageId = '';
 
-  // 同时通知 WeKnora 后端真的停止生成（不仅关闭前端 SSE 连接）
+  // 同时通知 WeKnora 后端真的停止生成（不仅关闭前端 SSE 连接）。
+  // 注意：空闲超时/断网的意外中断不走这里——后端继续生成，事件留在缓存供断线续流接回。
   if (sessionId && messageId) {
     void notifyBackendStop(sessionId, messageId);
   }
@@ -174,6 +207,14 @@ export async function streamKnowledgeChat(
   };
 
   let sid = sessionId ?? '';
+  let streamStarted = false; // 是否已进入 SSE 消费阶段（此后断开=意外中断，可续流）
+  const controller = new AbortController();
+  const watchdog = createIdleWatchdog(RAG_CONFIG.idleTimeoutMs, () => controller.abort());
+  watchdog.kick(); // 覆盖建会话与建连阶段
+  userStopRequested = false;
+  currentAbortRef.controller = controller;
+  currentAbortRef.sessionId = sid;
+  currentAbortRef.messageId = '';
   try {
     // 1. 无会话时创建
     if (!sid) {
@@ -186,14 +227,10 @@ export async function streamKnowledgeChat(
       const created = (await createRes.json()) as { data?: { id?: string } };
       sid = created.data?.id ?? '';
       if (!sid) throw new Error('创建会话未返回 ID');
+      currentAbortRef.sessionId = sid;
     }
 
     // 2. 发起流式问答
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), RAG_CONFIG.timeoutMs);
-    currentAbortRef.controller = controller;
-    currentAbortRef.sessionId = sid;
-    currentAbortRef.messageId = '';
     const endpoint = agentEnabled ? 'agent-chat' : 'knowledge-chat';
     const body: Record<string, unknown> = {
       query,
@@ -218,24 +255,33 @@ export async function streamKnowledgeChat(
       throw new Error(`RAG 服务错误 HTTP ${res.status} ${errText.slice(0, 120)}`);
     }
 
-    await consumeSseStream(res.body, events);
+    streamStarted = true;
+    await consumeSseStream(res.body, events, watchdog.kick);
 
-    window.clearTimeout(timer);
-    currentAbortRef.controller = null;
     events.onDone?.();
     return sid;
   } catch (err) {
-    window.clearTimeout(0);
-    currentAbortRef.controller = null;
+    const byUser = userStopRequested;
+    userStopRequested = false;
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
-    if (isAbort) {
+    if (isAbort && byUser) {
       // 用户主动停止：仅触发 onAbort，**不**走 onDone / onError（避免被前端误判为"未拿到回答 → 降级本地"）
       events.onAbort?.();
+    } else if (isAbort) {
+      // 空闲超时（连接静默被判死）：后端可能仍在生成，发 onInterrupted 供前端提供"继续生成"
+      events.onInterrupted?.({ sessionId: sid });
+    } else if (streamStarted) {
+      // 流中途网络断开（网关/上游重启、断网等）：同属意外中断，可从服务端续流；
+      // 不发 onError——此时可能已有部分内容，且后端仍在生成，本地兜底/报错都不合适
+      events.onInterrupted?.({ sessionId: sid });
     } else {
       const msg = err instanceof Error ? err.message : String(err);
       events.onError?.(msg);
     }
     return sessionId ?? sid;
+  } finally {
+    watchdog.stop();
+    currentAbortRef.controller = null;
   }
 }
 
@@ -365,8 +411,8 @@ function handleEvent(ev: SseEvent, events: RagStreamEvents, inlineRefs: InlineRe
   }
 }
 
-/** 读取并分发 SSE 流（knowledge-chat / agent-chat / continue-stream 共用） */
-async function consumeSseStream(body: ReadableStream<Uint8Array>, events: RagStreamEvents): Promise<void> {
+/** 读取并分发 SSE 流（knowledge-chat / agent-chat / continue-stream 共用）；每个数据块回调 onActivity 供空闲看门狗重置 */
+async function consumeSseStream(body: ReadableStream<Uint8Array>, events: RagStreamEvents, onActivity?: () => void): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
@@ -381,6 +427,7 @@ async function consumeSseStream(body: ReadableStream<Uint8Array>, events: RagStr
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    onActivity?.();
     buffer += decoder.decode(value, { stream: true });
 
     // 按事件边界切分
@@ -415,6 +462,9 @@ export async function continueKnowledgeStream(
   const headers: Record<string, string> = gatewayHeaders();
 
   const controller = new AbortController();
+  const watchdog = createIdleWatchdog(RAG_CONFIG.idleTimeoutMs, () => controller.abort());
+  watchdog.kick();
+  userStopRequested = false;
   currentAbortRef.controller = controller;
   currentAbortRef.sessionId = sessionId;
   currentAbortRef.messageId = messageId;
@@ -427,21 +477,27 @@ export async function continueKnowledgeStream(
     });
     if (!res.ok || !res.body) {
       // 404 = 该消息已无流事件（可能已完成），静默结束
-      currentAbortRef.controller = null;
       events.onDone?.();
       return;
     }
-    await consumeSseStream(res.body, events);
-    currentAbortRef.controller = null;
+    await consumeSseStream(res.body, events, watchdog.kick);
     events.onDone?.();
   } catch (err) {
-    currentAbortRef.controller = null;
+    const byUser = userStopRequested;
+    userStopRequested = false;
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
-    if (isAbort) {
+    if (isAbort && byUser) {
       events.onAbort?.();
+    } else if (!byUser) {
+      // 续流本身也被中断/断网：标记可再次续流；onDone 照发以免调用方 busy 卡死
+      events.onInterrupted?.({ sessionId });
+      events.onDone?.();
     } else {
       events.onDone?.();
     }
+  } finally {
+    watchdog.stop();
+    currentAbortRef.controller = null;
   }
 }
 

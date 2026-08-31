@@ -17,7 +17,8 @@ import MarkdownView from '../components/MarkdownView';
 import ThinkingPanel, { type TimelineEvent } from '../components/ThinkingPanel';
 import type { AiAnswer } from '../utils/answer-engine';
 import { continueKnowledgeStream, deleteRemoteSession, listRemoteMessages } from '../services/rag';
-import type { RemoteMessage } from '../services/rag';
+import type { RagStreamEvents, RemoteMessage } from '../services/rag';
+import type { ChatCallbacks } from '../services/chat-service';
 import { createRemoteSession, deleteTemporaryAttachment, getTemporaryAttachment, uploadTemporaryAttachment } from '../services/attachment-service';
 import { downloadArtifact, listMessageArtifacts } from '../services/artifact-service';
 import type { ArtifactMeta } from '../services/artifact-service';
@@ -34,6 +35,8 @@ interface ChatMsg {
   artifacts?: ArtifactMeta[];
   /** 网关对账裁决（demo 后端网关回写，直连 WeKnora 时无） */
   gatewayAudit?: { verdict: 'pass' | 'mismatch' | 'reject'; message: string };
+  /** 流被意外中断（空闲超时/断网，非用户主动停止）：可提供"继续生成"断线续流 */
+  interrupted?: boolean;
   /** 时间轴事件流（thinking 多轮 + tool_call/result 配对，按到达顺序） */
   timeline?: TimelineEvent[];
   startedAt?: number;
@@ -336,6 +339,116 @@ useEffect(() => {
     if (target?.remoteId && (activeRagSessionId ?? active.ragSessionId)) await deleteTemporaryAttachment(activeRagSessionId ?? active.ragSessionId as string, target.remoteId).catch(() => undefined);
   };
 
+  /**
+   * 流式回调工厂：send 与"继续生成"共用同一套时间轴/增量/审计处理。
+   * ragEvents 供 continue-stream 直用；chatCallbacks 供 chatWithRag（onDelta/onLocalAnswer 差异做适配）。
+   */
+  const makeStreamHandlers = (sessionId: number, aiMsgId: number) => {
+    let timelineSeq = 0;
+    let lastMessageId = '';
+    const patchTimeline = (fn: (events: TimelineEvent[]) => TimelineEvent[]) => {
+      updateSession(sessionId, (session) => ({
+        ...session,
+        messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, timeline: fn(message.timeline ?? []) } : message),
+      }));
+    };
+    const patchMessage = (extra: Partial<ChatMsg>) => {
+      updateSession(sessionId, (session) => ({
+        ...session,
+        messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, ...extra } : message),
+      }));
+    };
+    const stopTypewriter = () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+    const ragEvents: RagStreamEvents = {
+      onMessageId: (messageId) => {
+        lastMessageId = messageId;
+        patchMessage({ remoteMessageId: messageId });
+      },
+      onToolCallStart: (toolCallId, toolName, args) => {
+        if (toolName.toLowerCase().includes('retriev') || toolName.toLowerCase().includes('search')) setAssistantState('searching');
+        else if (toolName.toLowerCase().includes('rerank')) setAssistantState('organizing');
+        else if (toolName.toLowerCase().includes('understand') || toolName.toLowerCase().includes('query')) setAssistantState('understanding');
+        patchTimeline((events) => {
+          const existing = events.find((e) => e.kind === 'tool' && e.id === toolCallId);
+          if (existing) return events;
+          return [...events, { kind: 'tool', id: toolCallId, name: toolName, args, pending: true, seq: ++timelineSeq }];
+        });
+      },
+      onToolCallEnd: (toolCallId, _toolName, success, output, durationMs, data) => {
+        patchTimeline((events) => events.map((event) => event.kind === 'tool' && event.id === toolCallId ? { ...event, pending: false, success, output, durationMs, data } : event));
+      },
+      onToolCall: (toolName) => {
+        if (toolName.includes('retriev')) setAssistantState('searching');
+        else if (toolName.includes('rerank')) setAssistantState('organizing');
+        else if (toolName.includes('understand') || toolName.includes('query')) setAssistantState('understanding');
+      },
+      onThinkingDelta: (eventId, delta, done, durationMs) => {
+        patchTimeline((events) => {
+          const existing = events.find((e) => e.kind === 'thinking' && e.id === eventId);
+          if (!existing) {
+            return [...events, { kind: 'thinking', id: eventId, content: delta, pending: !done, durationMs: done ? durationMs : undefined, seq: ++timelineSeq }];
+          }
+          return events.map((event) => event.kind === 'thinking' && event.id === eventId
+            ? { ...event, content: (event.content ?? '') + delta, pending: !done, durationMs: done ? (durationMs ?? event.durationMs) : event.durationMs }
+            : event);
+        });
+      },
+      onAnswerDelta: (delta) => {
+        setAssistantState('generating');
+        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, source: 'rag', content: message.content + delta } : message) }));
+      },
+      onReferences: (refs) => {
+        setAssistantState('organizing');
+        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, references: refs.map((ref) => ({ title: ref.title, detail: ref.content })) } : message) }));
+      },
+      onGatewayAudit: (audit) => {
+        patchMessage({ gatewayAudit: { verdict: audit.verdict, message: audit.message } });
+        if (audit.verdict === 'reject' && audit.engineAnswer) {
+          // 数值铁律：网关拒收了模型自算的回答，追加确定性引擎兜底答案
+          updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, content: `${message.content}\n\n---\n\n${audit.engineAnswer}` } : message) }));
+        }
+      },
+      onAbort: () => {
+        // 用户主动停止：仅结束当前消息，不触发任何本地兜底
+        stopTypewriter();
+        patchMessage({ streaming: false, endedAt: Date.now() });
+        setAssistantState('done');
+        setBusy(false);
+      },
+      onInterrupted: () => {
+        // 意外中断（空闲超时/断网）：结束当前消息并标记 interrupted，界面出现"继续生成"
+        stopTypewriter();
+        patchMessage({ streaming: false, endedAt: Date.now(), interrupted: true });
+        setAssistantState('done');
+        setBusy(false);
+      },
+      onDone: () => {
+        if (!timerRef.current) {
+          setAssistantState('done');
+          patchMessage({ streaming: false, endedAt: Date.now() });
+          setBusy(false);
+        }
+      },
+    };
+    return {
+      getLastMessageId: () => lastMessageId,
+      ragEvents,
+      chatCallbacks: {
+        ...ragEvents,
+        onDelta: (delta: string) => ragEvents.onAnswerDelta?.(delta),
+        onLocalAnswer: (answer: AiAnswer) => {
+          patchMessage({ source: 'local' });
+          streamLocalAnswer(sessionId, { id: aiMsgId } as ChatMsg, answer);
+        },
+      } as ChatCallbacks,
+    };
+  };
+
   const send = (text: string) => {
     const query = text.trim();
     if (!query || busy) return;
@@ -353,86 +466,8 @@ useEffect(() => {
     setAttachments([]);
     setBusy(true);
     setAssistantState('understanding');
-    let remoteMessageId = '';
-    // 时间轴事件操作器：按 id 定位 thinking/tool 事件（与 WeKnora _eventMap/_pendingToolCalls 同思路）
-    const patchTimeline = (sessionId: number, msgId: number, fn: (events: TimelineEvent[]) => TimelineEvent[]) => {
-      updateSession(sessionId, (session) => ({
-        ...session,
-        messages: session.messages.map((message) => message.id === msgId ? { ...message, timeline: fn(message.timeline ?? []) } : message),
-      }));
-    };
-    let timelineSeq = 0;
-    void chatWithRag(query, activeRagSessionId ?? active.ragSessionId ?? null, {
-      onMessageId: (messageId) => {
-        remoteMessageId = messageId;
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, remoteMessageId: messageId } : message) }));
-      },
-      onToolCallStart: (toolCallId, toolName, args) => {
-        if (toolName.toLowerCase().includes('retriev') || toolName.toLowerCase().includes('search')) setAssistantState('searching');
-        else if (toolName.toLowerCase().includes('rerank')) setAssistantState('organizing');
-        else if (toolName.toLowerCase().includes('understand') || toolName.toLowerCase().includes('query')) setAssistantState('understanding');
-        patchTimeline(sessionId, aiMsg.id, (events) => {
-          const existing = events.find((e) => e.kind === 'tool' && e.id === toolCallId);
-          if (existing) return events;
-          return [...events, { kind: 'tool', id: toolCallId, name: toolName, args, pending: true, seq: ++timelineSeq }];
-        });
-      },
-      onToolCallEnd: (toolCallId, _toolName, success, output, durationMs, data) => {
-        patchTimeline(sessionId, aiMsg.id, (events) => events.map((event) => event.kind === 'tool' && event.id === toolCallId ? { ...event, pending: false, success, output, durationMs, data } : event));
-      },
-      onToolCall: (toolName) => {
-        if (toolName.includes('retriev')) setAssistantState('searching');
-        else if (toolName.includes('rerank')) setAssistantState('organizing');
-        else if (toolName.includes('understand') || toolName.includes('query')) setAssistantState('understanding');
-      },
-      onGatewayAudit: (audit) => {
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, gatewayAudit: { verdict: audit.verdict, message: audit.message } } : message) }));
-        if (audit.verdict === 'reject' && audit.engineAnswer) {
-          // 数值铁律：网关拒收了模型自算的回答，追加确定性引擎兜底答案
-          updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, content: `${message.content}\n\n---\n\n${audit.engineAnswer}` } : message) }));
-        }
-      },
-      onThinkingDelta: (eventId, delta, done, durationMs) => {
-        patchTimeline(sessionId, aiMsg.id, (events) => {
-          const existing = events.find((e) => e.kind === 'thinking' && e.id === eventId);
-          if (!existing) {
-            return [...events, { kind: 'thinking', id: eventId, content: delta, pending: !done, durationMs: done ? durationMs : undefined, seq: ++timelineSeq }];
-          }
-          return events.map((event) => event.kind === 'thinking' && event.id === eventId
-            ? { ...event, content: (event.content ?? '') + delta, pending: !done, durationMs: done ? (durationMs ?? event.durationMs) : event.durationMs }
-            : event);
-        });
-      },
-      onDelta: (delta) => {
-        setAssistantState('generating');
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, source: 'rag', content: message.content + delta } : message) }));
-      },
-      onReferences: (refs) => {
-        setAssistantState('organizing');
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, references: refs.map((ref) => ({ title: ref.title, detail: ref.content })) } : message) }));
-      },
-      onLocalAnswer: (answer) => {
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, source: 'local' } : message) }));
-        streamLocalAnswer(sessionId, aiMsg, answer);
-      },
-      onAbort: () => {
-        // 用户主动停止：仅结束当前消息，不触发任何本地兜底
-        if (timerRef.current) {
-          window.clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id && message.streaming ? { ...message, streaming: false, endedAt: Date.now() } : message) }));
-        setAssistantState('done');
-        setBusy(false);
-      },
-      onDone: () => {
-        if (!timerRef.current) {
-          setAssistantState('done');
-          updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, streaming: false, endedAt: Date.now() } : message) }));
-          setBusy(false);
-        }
-      },
-    }, {
+    const handlers = makeStreamHandlers(sessionId, aiMsg.id);
+    void chatWithRag(query, activeRagSessionId ?? active.ragSessionId ?? null, handlers.chatCallbacks, {
       knowledgeBaseIds: selectedKbIds,
       agentId: selectedAgentId || undefined,
       agentEnabled: selectedAgentId !== 'builtin-quick-answer',
@@ -442,11 +477,59 @@ useEffect(() => {
         setActiveRagSessionId(outcome.sessionId);
         updateSession(sessionId, (session) => ({ ...session, ragSessionId: outcome.sessionId ?? undefined }));
       }
-      if (outcome.source === 'rag' && outcome.sessionId && remoteMessageId) {
-        const artifacts = await listMessageArtifacts(outcome.sessionId, remoteMessageId);
+      if (outcome.source === 'rag' && outcome.sessionId && handlers.getLastMessageId()) {
+        const artifacts = await listMessageArtifacts(outcome.sessionId, handlers.getLastMessageId());
         if (artifacts.length) updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, artifacts } : message) }));
       }
     });
+  };
+
+  /** 意外中断后的"继续生成"：走 continue-stream 从服务端事件缓存接回 */
+  const resumeGeneration = (message: ChatMsg) => {
+    const ragSessionId = activeRagSessionId ?? active.ragSessionId;
+    if (!ragSessionId || !message.remoteMessageId || busy) return;
+    const sessionId = active.id;
+    shouldFollowRef.current = true;
+    setBusy(true);
+    setAssistantState('generating');
+    updateSession(sessionId, (session) => ({
+      ...session,
+      messages: session.messages.map((item) => item.id === message.id ? { ...item, streaming: true, interrupted: false } : item),
+    }));
+    const handlers = makeStreamHandlers(sessionId, message.id);
+    let sawDelta = false;
+    const events: RagStreamEvents = {
+      ...handlers.ragEvents,
+      onAnswerDelta: (delta) => {
+        sawDelta = true;
+        handlers.ragEvents.onAnswerDelta?.(delta);
+      },
+      onDone: () => {
+        handlers.ragEvents.onDone?.();
+        // 续流没带回任何增量（后端可能已生成完毕、流缓存已清）→ 从服务端拉最终全文补齐
+        if (!sawDelta && message.remoteMessageId) {
+          void syncMessageFromRemote(sessionId, ragSessionId, message.remoteMessageId, message.id);
+        }
+      },
+    };
+    void continueKnowledgeStream(ragSessionId, message.remoteMessageId, events);
+  };
+
+  /** 从服务端历史拉取该条助手消息的最终全文，比本地长则补齐（覆盖"中断后服务端已生成完"的情况） */
+  const syncMessageFromRemote = async (sessionId: number, ragSessionId: string, remoteMessageId: string, localMsgId: number) => {
+    const remote = await listRemoteMessages(ragSessionId, undefined, 20);
+    const hit = remote.find((item) => item.id === remoteMessageId && item.role === 'assistant');
+    if (!hit) return;
+    let content = hit.content ?? '';
+    const thinkMatch = content.match(/^<think>([\s\S]*?)(<\/think>)?/);
+    if (thinkMatch) content = content.slice(thinkMatch[0].length).trim();
+    updateSession(sessionId, (session) => ({
+      ...session,
+      messages: session.messages.map((item) => {
+        if (item.id !== localMsgId || content.length <= item.content.length) return item;
+        return { ...item, content, streaming: false, interrupted: false };
+      }),
+    }));
   };
 
   /** 用户点击"停止生成"：中断 RAG SSE 流 + 停掉本地打字机 + 立即结束当前消息 */
@@ -526,6 +609,9 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
               {message.attachments && message.attachments.length > 0 && <div className="ai-message-attachments">{message.attachments.map((file) => <Tag key={file.id} icon={<PaperClipOutlined />}>{file.name}</Tag>)}</div>}
               {message.source && !message.streaming && <div className="ai-source-badge"><span className={`ai-source-dot ai-source-dot-${message.source}`} />{message.source === 'rag' ? 'RAG 在线回答' : '本地演示引擎'}</div>}
               {message.gatewayAudit && !message.streaming && <div className={`ai-gateway-audit ai-gateway-audit-${message.gatewayAudit.verdict}`}>{message.gatewayAudit.verdict === 'pass' ? '✓ ' : '⚠ '}{message.gatewayAudit.message}</div>}
+              {message.interrupted && message.remoteMessageId && !message.streaming && (
+                <button type="button" className="ai-resume-btn" onClick={() => resumeGeneration(message)}>↻ 继续生成（连接中断，从服务端接回）</button>
+              )}
               {message.artifacts && <ArtifactList artifacts={message.artifacts} onDownload={async (artifact) => {
                 const remoteSessionId = activeRagSessionId ?? active.ragSessionId;
                 if (!remoteSessionId || !message.remoteMessageId) return;
