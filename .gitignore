@@ -1,0 +1,32 @@
+# 子项目各自独立仓库，不纳入根仓库
+/huangpu-react/
+/weknora-local/
+/weknora-backup/
+/weknora-output/
+
+# 日志与临时文件
+*.log
+logs/
+dev.err
+
+# 二进制可执行文件（cloudflared 隧道客户端等）
+*.exe
+
+# 环境变量与密钥（含真实 API Key，严禁入库；仅提交 .env.example 模板）
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+*.local
+huangpu-sandbox/deploy/.ossutilconfig
+
+# 工具目录
+.zcode/
+.opencode/
+
+# 依赖
+node_modules/
+
+# ossutil 工具二进制不入库
+huangpu-sandbox/deploy/ossutil-*/

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>黄埔区城更数字沙盘平台</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <div id="login-page" class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="icon">🏗️</div>
+        <h1>黄埔区城更数字沙盘平台</h1>
+        <p>城市更新项目全生命周期数字化管控 · Demo v2.5</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label>用户名</label>
+          <input type="text" id="login-user" value="demo" placeholder="请输入用户名">
+        </div>
+        <div class="form-group">
+          <label>密码</label>
+          <input type="password" id="login-pass" value="demo123" placeholder="请输入密码">
+        </div>
+        <div class="form-group">
+          <label>短信验证码</label>
+          <input type="text" id="login-sms" value="888888" placeholder="请输入验证码">
+        </div>
+        <div class="form-group">
+          <label>登录角色</label>
+          <select id="login-role">
+            <option value="股份领导/指挥长">股份领导 / 指挥长</option>
+            <option value="指挥部-商务部" selected>指挥部 - 商务部</option>
+            <option value="指挥部-外协部">指挥部 - 外协部</option>
+            <option value="指挥部-工程技术部">指挥部 - 工程技术部</option>
+            <option value="安全员">安全员</option>
+            <option value="指挥部-财务部">指挥部 - 财务部</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">登 录</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="app" class="app-layout hidden">
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-brand">
+          <div class="brand-icon">🏗️</div>
+          <div class="brand-text">
+            <h2>黄埔区城更<br>数字沙盘平台</h2>
+            <span>v2.5 Demo</span>
+          </div>
+        </div>
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" title="收起侧栏" aria-label="收起侧栏">
+          <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+      </div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <div class="nav-group" data-group="sandbox">
+          <button type="button" class="nav-section-toggle" aria-expanded="true">
+            <span class="section-label">数字沙盘</span>
+            <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item active" data-view="dashboard" title="多项目总览"><span class="icon">📊</span><span class="nav-label">多项目总览</span></button>
+            <button class="nav-item" data-view="project" title="单项目详情"><span class="icon">🏢</span><span class="nav-label">单项目详情</span></button>
+            <button class="nav-item" data-view="decision-system" title="一体化决策推演"><span class="icon">🧠</span><span class="nav-label">一体化决策推演</span></button>
+          </div>
+        </div>
+        <div class="nav-group" data-group="business" data-nav-group="business">
+          <button type="button" class="nav-section-toggle" aria-expanded="true">
+            <span class="section-label">业务系统</span>
+            <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-view="progress-system" data-nav-group="business" title="施工进度管控"><span class="icon">🏗️</span><span class="nav-label">施工进度管控</span></button>
+            <button class="nav-item" data-view="design-control" data-nav-group="business" title="设计管控"><span class="icon">📐</span><span class="nav-label">设计管控</span></button>
+            <button class="nav-item" data-view="documents" data-nav-group="business" title="文档管理"><span class="icon">📁</span><span class="nav-label">文档管理</span></button>
+            <button class="nav-item" data-view="work-mgmt" data-nav-group="business" title="工作管理"><span class="icon">📝</span><span class="nav-label">工作管理</span></button>
+            <button class="nav-item" data-view="cost-system" data-nav-group="business" title="成本测算子系统"><span class="icon">💰</span><span class="nav-label">成本测算子系统</span></button>
+            <button class="nav-item" data-view="material" data-nav-group="business" title="物资消耗管控"><span class="icon">📦</span><span class="nav-label">物资消耗管控</span></button>
+            <button class="nav-item" data-view="supplier-system" data-nav-group="business" title="供应商库"><span class="icon">🏭</span><span class="nav-label">供应商库</span></button>
+            <button class="nav-item" data-view="coordination" data-nav-group="business" title="外协协调"><span class="icon">🤝</span><span class="nav-label">外协协调</span></button>
+            <button class="nav-item" data-view="cashflow" data-nav-group="business" title="动态现金流"><span class="icon">💵</span><span class="nav-label">动态现金流</span></button>
+            <button class="nav-item" data-view="risk-system" data-nav-group="business" title="风险管理系统"><span class="icon">⚠️</span><span class="nav-label">风险管理系统</span></button>
+            <button class="nav-item" data-view="safety-log" data-nav-group="business" title="安全日志 AI巡检"><span class="icon">🦺</span><span class="nav-label">安全日志 AI巡检</span></button>
+            <button class="nav-item" data-view="reports" data-nav-group="business" title="报表中心"><span class="icon">📋</span><span class="nav-label">报表中心</span></button>
+          </div>
+        </div>
+        <div class="nav-group" data-group="system" data-nav-group="system">
+          <button type="button" class="nav-section-toggle" aria-expanded="true">
+            <span class="section-label">系统</span>
+            <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-view="sync" data-nav-group="system" title="数据同步日志"><span class="icon">🔗</span><span class="nav-label">数据同步日志</span></button>
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button type="button" class="mobile-nav-btn" id="mobile-nav-btn" aria-label="打开导航">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <div class="breadcrumb" id="breadcrumb">首页 / <strong>多项目总览</strong></div>
+        </div>
+        <div class="topbar-right">
+          <div class="sync-badge"><span class="sync-dot"></span> 数据已同步 · 09:05</div>
+          <div class="user-info">
+            <div class="user-avatar" id="user-avatar">艾</div>
+            <div>
+              <div id="user-name">艾经理</div>
+              <div class="text-muted" style="font-size:11px" id="user-role">指挥部-商务部</div>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="logout-btn">退出</button>
+        </div>
+      </header>
+      <main class="content" id="main-content"></main>
+    </div>
+  </div>
+
+  <div id="lightbox" class="lightbox hidden">
+    <button class="lightbox-close" id="lightbox-close">✕</button>
+    <div class="lightbox-body">
+      <div class="lightbox-image-wrap" id="lightbox-wrap">
+        <img id="lightbox-img" src="" alt="航拍图">
+        <div id="lightbox-markers"></div>
+      </div>
+    </div>
+    <div id="lightbox-caption"></div>
+    <div id="lightbox-ai-summary" class="lightbox-ai"></div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/suppliers-data.js"></script>
+  <script src="js/cost-data.js"></script>
+  <script src="js/progress-gantt.js"></script>
+  <script src="js/cost-ui.js"></script>
+  <script src="js/dashboard-ui.js"></script>
+  <script src="js/business-modules.js"></script>
+  <script src="js/decision-engine.js"></script>
+  <script src="js/decision-viz.js"></script>
+  <script src="js/kimi-submit-ui.js"></script>
+  <script src="js/safety-ai-config.js"></script>
+  <script src="js/safety-ai.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

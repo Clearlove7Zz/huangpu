@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>黄埔区城更数字沙盘平台需求说明书</title>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", SimSun, sans-serif; font-size: 11pt; line-height: 1.6; margin: 2cm; color: #222; }
+  h1 { font-size: 22pt; text-align: center; margin-bottom: 6pt; }
+  h2 { font-size: 16pt; margin-top: 18pt; border-bottom: 1px solid #ccc; padding-bottom: 4pt; }
+  h3 { font-size: 13pt; margin-top: 14pt; }
+  h4 { font-size: 12pt; margin-top: 10pt; }
+  .meta { text-align: center; color: #555; margin-bottom: 24pt; }
+  table { border-collapse: collapse; width: 100%; margin: 10pt 0; font-size: 10pt; }
+  th, td { border: 1px solid #999; padding: 5pt 8pt; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: bold; }
+  ul { margin: 6pt 0; }
+  li { margin: 3pt 0; }
+  .center { text-align: center; }
+  pre { background: #f5f5f5; padding: 10pt; font-size: 9pt; border: 1px solid #ddd; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<h1>黄埔区城更数字沙盘平台<br>需求说明书</h1>
+<p class="meta">
+  <strong>文档版本</strong>：v1.6（依据 Demo 提炼）<br>
+  <strong>适用对象</strong>：产品、研发、业务、项目管理<br>
+  <strong>编制依据</strong>：huangpu-sandbox Demo 原型（v1.6）
+</p>
+
+<h2>1. 文档概述</h2>
+
+<h3>1.1 建设背景</h3>
+<p>黄埔区城市更新项目群包含多个地块，采用 EPC 模式（费率下浮 5%），涉及市政集团、上海路桥等多方建设主体。项目全生命周期涵盖证照办理、设计出图、施工进度、成本测算、物资消耗、分包付款、现金流、风险管控、外协协调等业务。</p>
+<p>当前各业务数据分散在 ES 经济管理系统、供应链平台、广联达算量、Jarvis BIM 进度展示、成本测算子系统等多个系统中。本平台以<strong>数字沙盘</strong>为统一展示与决策入口，通过数据同步汇聚各系统数据，实现「一屏总览、分层下钻、角色分权」。</p>
+
+<h3>1.2 建设目标</h3>
+<table>
+  <tr><th>目标</th><th>说明</th></tr>
+  <tr><td>多项目统筹</td><td>四地块核心指标一屏展示，支持排名对比与预警</td></tr>
+  <tr><td>单项目穿透</td><td>从总览下钻至证照、进度、形象、风险、成本、现金流等明细</td></tr>
+  <tr><td>业务系统协同</td><td>成本、进度、物资、供应商、ES、现金流等子系统分工录入、沙盘只读汇聚</td></tr>
+  <tr><td>角色化视图</td><td>指挥长只看沙盘；各部门只看与本职能相关的业务模块</td></tr>
+  <tr><td>数据不重复录入</td><td>沙盘展示层禁止手工录入，数据来自接口/Excel/OCR 同步</td></tr>
+</table>
+
+<h3>1.3 适用范围</h3>
+<ul>
+  <li><strong>在管项目</strong>：新联复建01地块（首期试点）、均一均二复建 AZ-01、洋田复建 AZ-01、均一均二复建 AZ-02</li>
+  <li><strong>合同模式</strong>：EPC（费率下浮 5%）</li>
+  <li><strong>用户组织</strong>：股份领导/指挥长、指挥部（商务部、工程技术部、外协部、财务部）</li>
+</ul>
+
+<h2>2. 系统总体架构</h2>
+
+<h3>2.1 功能分层</h3>
+<pre>┌─────────────────────────────────────────────────────────┐
+│                    数字沙盘（展示层）                      │
+│   多项目总览看板  │  单项目详情  │  只读嵌入（现金流等）    │
+├─────────────────────────────────────────────────────────┤
+│                    业务子系统（录入层）                    │
+│ 成本测算 │ 施工进度 │ 风险 │ 物资 │ 供应商 │ ES │ 现金流  │
+├─────────────────────────────────────────────────────────┤
+│                    数据同步层                             │
+│  标准接口 │ Excel 模板导入 │ 图片识别(OCR) │ 同步日志     │
+├─────────────────────────────────────────────────────────┤
+│                    外部数据源                             │
+│  ES系统 │ 供应链 │ 广联达 │ Jarvis BIM │ 成本测算子系统   │
+└─────────────────────────────────────────────────────────┘</pre>
+
+<h3>2.2 核心设计原则</h3>
+<p><strong>三级数据流转</strong></p>
+<ul>
+  <li><strong>录入层</strong>：ES、数字施工平台、供应链、广联达、成本测算子系统等为唯一录入源</li>
+  <li><strong>同步层</strong>：标准接口、Excel 导入、OCR，自动覆盖历史数据</li>
+  <li><strong>展示层</strong>：数字沙盘汇总 → 明细下钻 → 原始单据，<strong>禁止手动录入</strong></li>
+</ul>
+<p><strong>可编辑 vs 只读</strong></p>
+<ul>
+  <li>蓝色输入框：业务人员可在子系统中编辑</li>
+  <li>灰色只读字段：系统自动计算或沙盘汇聚展示</li>
+  <li>沙盘嵌入的现金流等内容：<strong>只读看板</strong>，数据来自商务部测算</li>
+</ul>
+<p><strong>利润率业务规则</strong></p>
+<ul>
+  <li>业主给予总包固定利润：<strong>5%</strong>（EPC 费率下浮）</li>
+  <li>项目目标利润率：<strong>16.66%</strong>（通过分包成本控制实现）</li>
+  <li>实际利润率低于 16.66% 时触发预警，需分析工程量或材料单价偏差</li>
+</ul>
+
+<h2>3. 用户角色与权限</h2>
+
+<h3>3.1 角色定义</h3>
+<table>
+  <tr><th>角色</th><th>代表用户</th><th>核心诉求</th></tr>
+  <tr><td>股份领导/指挥长</td><td>宁总</td><td>全局掌控，不看业务录入系统</td></tr>
+  <tr><td>指挥部-商务部</td><td>艾经理</td><td>成本测算、物资、供应商、现金流、ES</td></tr>
+  <tr><td>指挥部-工程技术部</td><td>曹经理</td><td>施工进度、形象进度、风险管理</td></tr>
+  <tr><td>指挥部-外协部</td><td>吴主任</td><td>外协协调事项跟踪</td></tr>
+  <tr><td>指挥部-财务部</td><td>王会计</td><td>ES 经济管理、供应商、现金流</td></tr>
+</table>
+
+<h3>3.2 导航权限矩阵</h3>
+<table>
+  <tr><th>功能模块</th><th>指挥长</th><th>商务部</th><th>工程技术部</th><th>外协部</th><th>财务部</th></tr>
+  <tr><td>多项目总览</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>单项目详情</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>施工进度管控</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>—</td></tr>
+  <tr><td>成本测算子系统</td><td>—</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+  <tr><td>物资消耗管控</td><td>—</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+  <tr><td>供应商库</td><td>—</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+  <tr><td>ES 经济管理</td><td>—</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+  <tr><td>外协协调</td><td>—</td><td>—</td><td>—</td><td>✓</td><td>—</td></tr>
+  <tr><td>动态现金流（可编辑）</td><td>—</td><td>✓</td><td>—</td><td>—</td><td>✓</td></tr>
+  <tr><td>风险管理系统</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>—</td></tr>
+  <tr><td>报表中心</td><td>—</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>数据同步日志</td><td>—</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+</table>
+<p><strong>指挥长特殊规则</strong>：侧栏仅显示「数字沙盘」分组；「业务系统」「系统」分组整体隐藏；快捷入口仅保留项目详情与数据刷新；看板证照办理进度为只读展示。</p>
+
+<h3>3.3 单项目 Tab 权限</h3>
+<table>
+  <tr><th>Tab</th><th>指挥长</th><th>工程技术部</th><th>外协部</th><th>商务部/财务部</th></tr>
+  <tr><td>证照办理进度</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>施工进度</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>形象进度</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>风险管控</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>动态现金流（只读）</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>成本管控</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
+  <tr><td>项目大事记</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+  <tr><td>产值与荣誉</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+</table>
+
+<h2>4. 功能需求</h2>
+
+<h3>4.1 用户认证</h3>
+<table>
+  <tr><th>编号</th><th>需求描述</th><th>优先级</th></tr>
+  <tr><td>AUTH-01</td><td>支持用户名 + 密码 + 短信验证码登录</td><td>P0</td></tr>
+  <tr><td>AUTH-02</td><td>登录时选择角色，系统按角色加载导航与权限</td><td>P0</td></tr>
+  <tr><td>AUTH-03</td><td>顶部展示当前用户姓名、角色、数据同步状态</td><td>P1</td></tr>
+  <tr><td>AUTH-04</td><td>支持退出登录</td><td>P1</td></tr>
+</table>
+<p>Demo 阶段为模拟登录，正式版需对接企业统一身份认证。</p>
+
+<h3>4.2 数字沙盘 — 多项目总览看板</h3>
+<h4>4.2.1 核心指标卡片</h4>
+<p>展示四地块汇总：在管地块数量、累计产值、风险总数、利润/物资预警项数。</p>
+<h4>4.2.2 四地块每周排名</h4>
+<p>维度：综合得分、进度完成、安全文明、成本管控、出图完成；支持导出 Excel/PDF。</p>
+<h4>4.2.3 图表分析</h4>
+<ul>
+  <li>各项目进度对比柱状图（滞后节点警告色）</li>
+  <li>三值对比汇总：招标控制价 / 中标价 / 目标成本</li>
+</ul>
+<h4>4.2.4 四项目进度管控概览</h4>
+<table>
+  <tr><th>Tab</th><th>内容</th></tr>
+  <tr><td>证照办理进度</td><td>四项目证照汇总表；指挥长只读</td></tr>
+  <tr><td>施工进度</td><td>节点/专业、计划、实际、完成率、滞后状态</td></tr>
+  <tr><td>形象进度</td><td>内部 Jarvis BIM iframe；外部航拍 AI 对比</td></tr>
+</table>
+<h4>4.2.5 动态现金流概览（只读嵌入）</h4>
+<p>5月实际/预测结余、预测偏差、6月预测；预测 vs 实际曲线；收入 vs 支出曲线；月度明细表；各项目5月现金流分项。标注「只读看板 · 数据来自商务部测算」。</p>
+<h4>4.2.6 项目列表卡片</h4>
+<p>名称、状态、EPC标的、产值、利润率、进度条、建设主体、风险、滞后节点；点击进入单项目详情。</p>
+
+<h3>4.3 数字沙盘 — 单项目详情</h3>
+<table>
+  <tr><th>Tab</th><th>主要内容</th></tr>
+  <tr><td>证照办理进度</td><td>证照名称、状态、完成时间、时限、备注（可编辑）</td></tr>
+  <tr><td>施工进度</td><td>设计进度表、施工里程碑时间轴、安全/质量巡检</td></tr>
+  <tr><td>形象进度</td><td>Jarvis BIM iframe 内嵌；航拍 AI 按月对比与标注</td></tr>
+  <tr><td>风险管控</td><td>工程/经济/设计三维度，红/黄/蓝分级</td></tr>
+  <tr><td>动态现金流</td><td>只读嵌入，按项目过滤</td></tr>
+  <tr><td>成本管控</td><td>三值对比、造价占比、物资预警、超支Top、分包付款</td></tr>
+  <tr><td>项目大事记</td><td>时间轴事件，支持导出</td></tr>
+  <tr><td>产值与荣誉</td><td>产值按专业饼图、创奖评优申报状态</td></tr>
+</table>
+
+<h3>4.4 施工进度管控（工程技术部）</h3>
+<p>数据来源：Excel 导入 / Jarvis 进度展示（接口对接中）。含证照办理、施工进度（设计进度+里程碑+巡检）、形象进度三 Tab。支持 Excel 导入与导出报表。</p>
+
+<h3>4.5 风险管理系统（工程技术部）</h3>
+<p>四地块风险概览汇总表；分项目工程/经济/设计风险明细；支持导出风险汇总报表；可跳转单项目风险 Tab。</p>
+
+<h3>4.6 成本测算子系统（商务部）</h3>
+<h4>表一：工程审核对比表</h4>
+<p>依据广联达造价表 + 施工深化图纸。含总表、单位工程（地下室/土石方/高层住宅）、分部分项清单、业主 vs 审核对比。审定量/价可编辑，自动重算核增核减。</p>
+<h4>表二：三算对比表</h4>
+<p>招标控制价 → 中标合同价 → 内部测算成本；对比实际成本/利润；低于 16.66% 红线预警。</p>
+<h4>表三：实际成本清单</h4>
+<p>专业分包、材料、中标清单三类台账。</p>
+
+<h3>4.7 物资消耗管控（商务部）</h3>
+<p>预算 vs 采购 vs 消耗对比；消耗超预算 10% 预警；数据来自供应链平台；消耗趋势图与预警报告导出。</p>
+
+<h3>4.8 供应商库（商务部/财务部）</h3>
+<p>材料供应商、施工工程供应商分类管理。字段：编号、名称、实控人、产品/范围、资质、投标/中标、联系方式、适用项目、入库状态。支持 Excel 导入与台账导出。数据来源：附件6《黄埔项目群分供商名录》。</p>
+
+<h3>4.9 ES 经济管理系统（商务部/财务部）</h3>
+<p>ES 为唯一录入源，沙盘禁止重复录入。模块：供应商管理、招标预审、合同评审、变更计量、资金支付、报账（OCR）。展示合同评审、变更计量、资金支付明细。</p>
+
+<h3>4.10 动态现金流（商务部/财务部）</h3>
+<p>测算假设：回款15工作日到账；分包进度款80%；材料月结30天；临界结余200万。含月度明细、预测vs实际曲线、收入vs支出、各项目分项、敏感性分析。子系统可编辑，沙盘嵌入只读。</p>
+
+<h3>4.11 外协协调（外协部）</h3>
+<p>类型：前期手续、党建联建、应急事件、外部协调。字段：编号、事项、项目、状态、负责人、截止日期。</p>
+
+<h3>4.12 报表中心</h3>
+<table>
+  <tr><th>报表名称</th><th>类别</th><th>格式</th></tr>
+  <tr><td>多项目核心指标汇总表</td><td>沙盘</td><td>Excel/PDF</td></tr>
+  <tr><td>项目进度偏差分析报告</td><td>沙盘</td><td>Excel/PDF</td></tr>
+  <tr><td>项目风险汇总及处理台账</td><td>沙盘</td><td>Excel/PDF</td></tr>
+  <tr><td>产值与回款统计报表</td><td>沙盘</td><td>Excel/PDF</td></tr>
+  <tr><td>四地块每周排名报表</td><td>沙盘</td><td>Excel/PDF</td></tr>
+  <tr><td>项目大事记汇总</td><td>沙盘</td><td>Excel/PDF</td></tr>
+  <tr><td>施工进度与出图计划报表</td><td>沙盘</td><td>Excel/PDF</td></tr>
+  <tr><td>航拍AI进展对比报告</td><td>沙盘</td><td>PDF</td></tr>
+  <tr><td>分部分项造价汇总表等成本类报表</td><td>成本</td><td>Excel/PDF</td></tr>
+  <tr><td>动态现金流预测表</td><td>财务</td><td>Excel/PDF</td></tr>
+  <tr><td>供应商库台账</td><td>成本</td><td>Excel/PDF</td></tr>
+</table>
+
+<h3>4.13 数据同步日志</h3>
+<p>展示 Jarvis、成本测算、ES、供应链、广联达等来源的同步时间、方式、状态、记录数。</p>
+
+<h2>5. 数据需求</h2>
+
+<h3>5.1 项目主数据</h3>
+<p>每个地块维护：ID/名称/简称、状态、建设主体、建筑面积、EPC标的、合同模式、开竣工日期、整体进度、滞后节点、产值、成本完成率、利润率、回款率、三值成本、风险汇总等。</p>
+
+<h3>5.2 关键业务阈值</h3>
+<table>
+  <tr><th>参数</th><th>值</th><th>用途</th></tr>
+  <tr><td>目标利润率</td><td>16.66%</td><td>成本预警红线</td></tr>
+  <tr><td>业主给予利润</td><td>5%</td><td>EPC 费率下浮</td></tr>
+  <tr><td>物资超量预警</td><td>10%</td><td>消耗超预算比例</td></tr>
+  <tr><td>现金流临界结余</td><td>200 万</td><td>月度结余预警</td></tr>
+</table>
+
+<h3>5.3 外部系统对接</h3>
+<table>
+  <tr><th>系统</th><th>对接内容</th><th>当前状态</th></tr>
+  <tr><td>Jarvis BIM</td><td>内部形象进度</td><td>iframe 嵌入，接口对接中</td></tr>
+  <tr><td>成本测算子系统</td><td>三张成本表、三值对比</td><td>内部接口</td></tr>
+  <tr><td>ES 经济管理系统</td><td>合同、变更、支付、报账</td><td>标准接口 + Excel + OCR</td></tr>
+  <tr><td>供应链平台</td><td>物资采购/消耗</td><td>标准接口</td></tr>
+  <tr><td>广联达算量</td><td>业主算量文件</td><td>文件导入</td></tr>
+</table>
+
+<h2>6. 界面与交互需求</h2>
+<ul>
+  <li>深色主题管理后台；左侧导航 + 顶部面包屑</li>
+  <li>蓝色输入框=可编辑；灰色=只读/自动计算</li>
+  <li>预警色：红（危险）、黄（警告）、蓝（提示）</li>
+  <li>图表：柱状图、折线图、饼图/环形图</li>
+  <li>Jarvis iframe 内嵌（约640px高）；航拍灯箱 + AI 标注</li>
+</ul>
+
+<h2>7. 非功能需求</h2>
+<table>
+  <tr><th>类别</th><th>要求</th></tr>
+  <tr><td>性能</td><td>看板首屏加载 &lt; 3s</td></tr>
+  <tr><td>兼容性</td><td>Chrome/Edge 最新两版；响应式 ≥900px</td></tr>
+  <tr><td>安全</td><td>角色权限控制；正式环境对接 SSO</td></tr>
+  <tr><td>可用性</td><td>数据同步状态实时展示</td></tr>
+  <tr><td>扩展性</td><td>支持新增地块、报表、对接系统</td></tr>
+</table>
+
+<h2>8. 项目实施建议</h2>
+<table>
+  <tr><th>阶段</th><th>范围</th></tr>
+  <tr><td>一期（试点）</td><td>新联复建01：沙盘 + 单项目全 Tab + 成本三张表 + 现金流</td></tr>
+  <tr><td>二期</td><td>四地块全覆盖 + Jarvis/供应链/ES 接口打通</td></tr>
+  <tr><td>三期</td><td>航拍 AI 自动化 + 风险闭环 + 移动端</td></tr>
+</table>
+
+<h2>9. 附录：在管项目清单</h2>
+<table>
+  <tr><th>简称</th><th>全称</th><th>状态</th><th>建设主体</th><th>EPC标的(亿)</th></tr>
+  <tr><td>新联01</td><td>新联复建01地块</td><td>首期试点</td><td>市政集团</td><td>6.18</td></tr>
+  <tr><td>AZ-01</td><td>均一均二复建AZ-01地块</td><td>在建</td><td>市政集团</td><td>9.12</td></tr>
+  <tr><td>洋田AZ-01</td><td>洋田复建AZ-01地块</td><td>在建</td><td>市政集团</td><td>6.35</td></tr>
+  <tr><td>AZ-02</td><td>均一均二复建AZ-02地块</td><td>筹备中</td><td>上海路桥</td><td>4.89</td></tr>
+</table>
+
+<p class="meta" style="margin-top: 36pt;">— 文档结束 —</p>
+
+</body>
+</html>
