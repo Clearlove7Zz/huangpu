@@ -94,132 +94,85 @@ export function proxyPassthrough({ clientReq, clientRes, target, path }) {
   clientReq.pipe(up);
 }
 
-/** 解析一个 SSE 事件块：更新旁路累积器；回答/完成块被扣留（返回 'answer'|'complete'），其余放行（返回 null） */
+/** 解析一个 SSE 事件块，更新旁路累积器（回答实时透传，此处仅记录供流程对账） */
 function feedBlock(block, tap) {
   const dataLines = [];
   for (const line of block.split('\n')) {
     if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
   }
-  if (!dataLines.length) return null;
+  if (!dataLines.length) return;
   let payload;
   try {
     payload = JSON.parse(dataLines.join('\n'));
   } catch {
-    return null; // 非 JSON 事件忽略
+    return; // 非 JSON 事件忽略
   }
   if (payload.response_type === 'answer' && typeof payload.content === 'string') {
     tap.answerText += payload.content;
-    tap.heldAnswer += payload.content;
-    return 'answer';
-  }
-  if (payload.response_type === 'complete') {
-    tap.heldComplete = block;
-    return 'complete';
-  }
-  if (payload.response_type === 'tool_call') {
+  } else if (payload.response_type === 'tool_call') {
     tap.sawToolCall = true;
   }
-  return null;
 }
 
 /**
- * 问答代理（POST /api/v1/knowledge-chat|agent-chat/:sid），支持打回重算。
- * 数值铁律的呈现层保证：answer 增量与 complete 信号先扣留不下发，思考/检索/工具
- * 事件实时转发（保活前端空闲看门狗，扣留期间以 SSE 注释心跳保连接）；流结束后
- * 由 onComplete 裁决——通过才放行正文，打回则整段丢弃进入下一轮，用户永远
- * 看不到未经引擎背书的推演数字。
- * @param injectedEvents 首轮预注入事件（网关引擎 tool_call/tool_result）
- * @param onComplete 流结束回调：入参 {tap, attempt}，可返回
- *   { appendEvents, followUp?: {path, bodyStr} }——followUp 存在且未超次数时，
- *   以新请求体向同一会话重发（打回给 agent 重答），事件继续写入同一客户端流。
+ * 问答代理（POST /api/v1/knowledge-chat|agent-chat/:sid）——透明转发 + 流程对账。
+ * 回答实时透传（引擎参与的正常路径不会事后拒收）；流结束后由 onComplete 依据
+ * "有数字 ∧ 引擎未参与" 做流程裁决（PRD §7.3 职责③），追加裁决事件后收尾。
+ * @param injectedEvents 首轮预注入事件（网关引擎 tool_call/tool_result 调用记录）
+ * @param onComplete 流结束回调：入参 {tap}，返回 {appendEvents}
  */
 export function proxyQa({ clientRes, target, path, bodyStr, injectedEvents, onComplete }) {
-  const MAX_ATTEMPTS = 2; // 最多打回重算 1 次
-  let attempts = 0;
-  const run = (currentPath, currentBody, currentInjected) => {
-    attempts += 1;
-    const up = http.request(upstreamOptions(target, 'POST', currentPath, { 'Content-Type': 'application/json', Accept: 'text/event-stream' }), (upRes) => {
-      const ct = String(upRes.headers['content-type'] ?? '');
-      if (!ct.includes('text/event-stream')) {
-        // 上游异常（401/500 JSON 等）：原样转发，交给前端既有降级链路
-        const chunks = [];
-        upRes.on('data', (c) => chunks.push(c));
-        upRes.on('end', () => {
-          if (!clientRes.headersSent) clientRes.writeHead(upRes.statusCode, upRes.headers);
-          clientRes.end(Buffer.concat(chunks));
-        });
-        return;
-      }
-      if (!clientRes.headersSent) {
-        clientRes.writeHead(200, {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'X-Accel-Buffering': 'no',
-        });
-      }
-      for (const ev of currentInjected) clientRes.write(ev);
+  const up = http.request(upstreamOptions(target, 'POST', path, { 'Content-Type': 'application/json', Accept: 'text/event-stream' }), (upRes) => {
+    const ct = String(upRes.headers['content-type'] ?? '');
+    if (!ct.includes('text/event-stream')) {
+      // 上游异常（401/500 JSON 等）：原样转发，交给前端既有降级链路
+      const chunks = [];
+      upRes.on('data', (c) => chunks.push(c));
+      upRes.on('end', () => {
+        clientRes.writeHead(upRes.statusCode, upRes.headers);
+        clientRes.end(Buffer.concat(chunks));
+      });
+      return;
+    }
+    clientRes.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    for (const ev of injectedEvents) clientRes.write(ev);
 
-      const tap = { answerText: '', heldAnswer: '', heldComplete: '', sawToolCall: false, leftover: '' };
-      const dec = new TextDecoder('utf-8');
-      const emitBlock = (block) => {
-        const held = feedBlock(block, tap);
-        if (held) clientRes.write(': kb\n\n'); // SSE 注释心跳：不产生事件，仅保活
-        else clientRes.write(block + '\n\n');
-      };
-      const drain = (final) => {
-        let idx;
-        while ((idx = tap.leftover.indexOf('\n\n')) !== -1) {
-          const block = tap.leftover.slice(0, idx);
-          tap.leftover = tap.leftover.slice(idx + 2);
-          emitBlock(block);
-        }
-        if (final && tap.leftover.trim()) {
-          emitBlock(tap.leftover);
-          tap.leftover = '';
-        }
-      };
-      /** 对账通过后放行正文：切成小块模拟流式输出 */
-      const flushAnswer = (text) => {
-        for (let i = 0; i < text.length; i += 80) {
-          clientRes.write(sseEvent({ response_type: 'answer', content: text.slice(i, i + 80) }));
-        }
-      };
-      const finalizeAndClose = (result) => {
-        if (tap.heldAnswer) flushAnswer(tap.heldAnswer);
-        for (const ev of result.appendEvents ?? []) clientRes.write(ev);
-        if (tap.heldComplete) clientRes.write(tap.heldComplete + '\n\n');
-        clientRes.end();
-      };
-      upRes.on('data', (c) => {
-        tap.leftover += dec.decode(c, { stream: true });
-        drain(false);
-      });
-      upRes.on('end', async () => {
-        tap.leftover += dec.decode();
-        drain(true);
-        let result = { appendEvents: [] };
-        try {
-          result = (await onComplete({ tap, attempt: attempts })) ?? result;
-        } catch (err) {
-          console.error('[gateway] 对账失败（不影响已转发内容）', err);
-        }
-        for (const ev of result.appendEvents ?? []) clientRes.write(ev);
-        if (result.followUp && attempts < MAX_ATTEMPTS) {
-          run(result.followUp.path, result.followUp.bodyStr, []);
-          return; // 客户端流由下一次尝试收尾
-        }
-        finalizeAndClose(result);
-      });
+    const tap = { answerText: '', sawToolCall: false, leftover: '' };
+    const dec = new TextDecoder('utf-8');
+    const feed = (raw) => {
+      tap.leftover += raw;
+      let idx;
+      while ((idx = tap.leftover.indexOf('\n\n')) !== -1) {
+        const block = tap.leftover.slice(0, idx);
+        tap.leftover = tap.leftover.slice(idx + 2);
+        feedBlock(block, tap);
+      }
+    };
+    upRes.on('data', (c) => {
+      const s = dec.decode(c, { stream: true });
+      feed(s);
+      clientRes.write(s);
     });
-    up.on('error', (err) => {
-      console.error(`[gateway] 上游错误（第 ${attempts} 次）`, err.message);
-      if (!clientRes.headersSent) sendJson(clientRes, 502, { error: '网关：WeKnora 上游不可达（前端将自动降级本地引擎）' });
-      else clientRes.end();
+    upRes.on('end', async () => {
+      feed(dec.decode());
+      if (tap.leftover.trim()) feedBlock(tap.leftover, tap);
+      let fin = { appendEvents: [] };
+      try {
+        fin = (await onComplete({ tap })) ?? fin;
+      } catch (err) {
+        console.error('[gateway] 对账失败（不影响已转发内容）', err);
+      }
+      for (const ev of fin.appendEvents ?? []) clientRes.write(ev);
+      clientRes.end();
     });
-    up.setTimeout(120000, () => up.destroy(new Error('upstream timeout')));
-    clientRes.on('close', () => up.destroy());
-    up.end(currentBody);
-  };
-  run(path, bodyStr, injectedEvents);
+  });
+  up.on('error', () => sendJson(clientRes, 502, { error: '网关：WeKnora 上游不可达（前端将自动降级本地引擎）' }));
+  up.setTimeout(120000, () => up.destroy(new Error('upstream timeout')));
+  clientRes.on('close', () => up.destroy());
+  up.end(bodyStr);
 }

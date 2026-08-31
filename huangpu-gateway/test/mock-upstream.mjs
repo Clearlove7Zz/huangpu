@@ -50,18 +50,11 @@ http
         })();
         const bad = q.includes('伪造');
         const noNumbers = q.includes('无数'); // 无数字回答：对账应判 na，不回写横幅
-        const kbConst = q.includes('文档常量'); // 引擎数 + KB 事实常量（7.8%）→ 应 pass
         res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
         res.write(sse({ response_type: 'thinking', content: '思考中', done: true }));
         res.write(sse({
           response_type: 'answer',
-          content: bad
-            ? '利润率将变为 25.3%'
-            : noNumbers
-              ? '利润率受钢筋价格、工期、回款节奏等多重因素影响。'
-              : kbConst
-                ? '推演后利润率 16.07%；另 HRB400 钢筋超预算 7.8%（-1.13 pct）需持续关注。'
-                : '利润率将由 17.2% 变为 16.07%（-1.13 pct）',
+          content: bad ? '利润率将变为 25.3%' : noNumbers ? '利润率受钢筋价格、工期、回款节奏等多重因素影响。' : '利润率将由 19.59% 变为 18.46%（-1.13 pct）',
         }));
         res.write(sse({ response_type: 'complete', data: { total_duration_ms: 12, total_steps: 1 } }));
         res.end();

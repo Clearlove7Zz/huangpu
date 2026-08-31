@@ -6,6 +6,9 @@
 
 import { CASHFLOW_JUN, CRITICAL_BALANCE, PROFIT_RED_LINE } from './engine-data.mjs';
 
+/** 钢筋成本份额（引擎口径：钢筋目标成本 = 目标成本 × 18%，与 KB 文档、对账白名单同源） */
+export const STEEL_SHARE = 0.18;
+
 export const FACTORS = [
   { id: 'steelPrice', label: '钢筋单价', unit: '%', min: -10, max: 15, step: 0.5, default: 0, impactWeight: 1.2 },
   { id: 'progressDelay', label: '关键节点延误', unit: '天', min: 0, max: 90, step: 1, default: 0, impactWeight: 1.5 },
@@ -62,7 +65,7 @@ export function simulate(project, factors) {
 
   const steel = factors.steelPrice || 0;
   if (steel !== 0) {
-    const steelCostShare = base.targetYi * 0.18 * 10000;
+    const steelCostShare = base.targetYi * STEEL_SHARE * 10000;
     const d = steelCostShare * (steel / 100);
     costDeltaWan += d;
     breakdown.push({ factor: '钢筋单价', delta: d, unit: '万' });

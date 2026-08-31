@@ -19,7 +19,9 @@ export const CRITICAL_BALANCE = 200;
 
 /**
  * 四地块项目数据（仅保留引擎与对账所需字段；
- * 来源 mock-data.ts projects，删除了 area/startDate/output 等无关字段）
+ * 来源 mock-data.ts projects，删除了 area/startDate/output 等无关字段）。
+ * 口径（2026-08-31 对齐版）：实际利润率 =（中标合同价 − 实际成本）/ 中标合同价，
+ * 与 kb-import 文档 v2 一致；改动任一侧必须同步。
  */
 export const PROJECTS = [
   {
@@ -28,7 +30,7 @@ export const PROJECTS = [
     shortName: '新联01',
     progress: 42.8,
     lagNodes: 2,
-    profitRate: 17.2,
+    profitRate: 19.59,
     paymentRate: 92.3,
     costCompletion: 78.5,
     risks: { total: 12, red: 2 },
@@ -40,7 +42,7 @@ export const PROJECTS = [
     shortName: 'AZ-01',
     progress: 28.5,
     lagNodes: 1,
-    profitRate: 15.8,
+    profitRate: 18.59,
     paymentRate: 88.6,
     costCompletion: 65.2,
     risks: { total: 8, red: 1 },
@@ -52,7 +54,7 @@ export const PROJECTS = [
     shortName: '洋田AZ-01',
     progress: 18.2,
     lagNodes: 0,
-    profitRate: 18.5,
+    profitRate: 22.39,
     paymentRate: 95.1,
     costCompletion: 52.8,
     risks: { total: 5, red: 0 },
@@ -64,7 +66,7 @@ export const PROJECTS = [
     shortName: 'AZ-02',
     progress: 5.0,
     lagNodes: 0,
-    profitRate: 17.8,
+    profitRate: 27.31,
     paymentRate: 100,
     costCompletion: 12.5,
     risks: { total: 3, red: 0 },

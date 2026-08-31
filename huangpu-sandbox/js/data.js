@@ -33,7 +33,7 @@ const MOCK_DATA = {
       outputTotal: 2.65,
       outputMonth: 0.48,
       costCompletion: 78.5,
-      profitRate: 17.2,
+      profitRate: 19.59,
       paymentRate: 92.3,
       risks: { total: 12, red: 2, yellow: 5, blue: 5, pending: 4, overThreshold: 1 },
       cost: { tenderPrice: 6.18, bidPrice: 5.87, targetCost: 4.58, actualCost: 4.72, overrunItems: 3, topOverruns: ['外墙工程', '精装修', '土方工程'] }
@@ -55,7 +55,7 @@ const MOCK_DATA = {
       outputTotal: 2.12,
       outputMonth: 0.35,
       costCompletion: 65.2,
-      profitRate: 15.8,
+      profitRate: 18.59,
       paymentRate: 88.6,
       risks: { total: 8, red: 1, yellow: 3, blue: 4, pending: 2, overThreshold: 1 },
       cost: { tenderPrice: 9.12, bidPrice: 8.66, targetCost: 6.85, actualCost: 7.05, overrunItems: 2, topOverruns: ['地下室工程', '桩基工程'] }
@@ -77,7 +77,7 @@ const MOCK_DATA = {
       outputTotal: 0.98,
       outputMonth: 0.22,
       costCompletion: 52.8,
-      profitRate: 18.5,
+      profitRate: 22.39,
       paymentRate: 95.1,
       risks: { total: 5, red: 0, yellow: 2, blue: 3, pending: 1, overThreshold: 0 },
       cost: { tenderPrice: 6.35, bidPrice: 6.03, targetCost: 4.72, actualCost: 4.68, overrunItems: 0, topOverruns: [] }
@@ -99,7 +99,7 @@ const MOCK_DATA = {
       outputTotal: 0,
       outputMonth: 0,
       costCompletion: 12.5,
-      profitRate: 17.8,
+      profitRate: 27.31,
       paymentRate: 100,
       risks: { total: 3, red: 0, yellow: 1, blue: 2, pending: 2, overThreshold: 0 },
       cost: { tenderPrice: 4.89, bidPrice: 4.65, targetCost: 3.42, actualCost: 3.38, overrunItems: 0, topOverruns: [] }
@@ -146,7 +146,7 @@ const MOCK_DATA = {
     { date: '2025-11-15', project: '均一均二AZ-01', title: '地下室开工', type: '进度', desc: 'AZ-01地块地下室结构施工启动', image: 'assets/aerial/3月-2.jpg' },
     { date: '2026-01-10', project: '新联复建01', title: '地下室底板浇筑', type: '进度', desc: '完成地下室底板混凝土浇筑', image: 'assets/aerial/4月-1.jpg' },
     { date: '2026-03-20', project: '新联复建01', title: '二星智慧工地申报', type: '创奖', desc: '启动二星智慧工地评级申报', image: 'assets/aerial/4月-2.jpg' },
-    { date: '2026-05-08', project: '均一均二AZ-01', title: '利润率低于红线预警', type: '成本', desc: '当前实际利润率15.8%，低于目标16.66%', image: 'assets/aerial/5月-1.jpg' },
+    { date: '2026-05-08', project: '均一均二AZ-01', title: '利润率低于红线预警', type: '成本', desc: '当前实际利润率18.59%，高于红线但安全垫收窄', image: 'assets/aerial/5月-1.jpg' },
     { date: '2026-05-18', project: '新联复建01', title: '钢筋超量预警', type: '物资', desc: 'HRB400钢筋消耗超预算7.8%', image: 'assets/aerial/4月-3.jpg' },
     { date: '2026-05-25', project: '新联复建01', title: '负一层结构完成80%', type: '进度', desc: '航拍确认地下室负一层主体结构完成80%', image: 'assets/aerial/5月-2.jpg' }
   ],
@@ -473,7 +473,7 @@ const MOCK_DATA = {
         { name: '新增供应商', value: '1 家', delta: '+1', note: '材料类入库审核通过' },
         { name: '协调事项解决', value: '1 项', delta: '+1', note: '党建联建活动闭环' },
         { name: '整体进度', value: '28.6%', delta: '+0.2%', note: '四项目加权平均' },
-        { name: '实际利润率', value: '17.1%', delta: '-0.1%', note: '目标固定 16.66%' }
+        { name: '实际利润率', value: '22.0%', delta: '+0.2%', note: '目标固定 16.66%' }
       ],
       byDept: [
         { dept: '商务部', detail: '完成5月现金流核对；物资钢筋超量预警跟进中' },
@@ -482,7 +482,7 @@ const MOCK_DATA = {
         { dept: '财务部', detail: '分包进度款审批3笔，合计1280万' }
       ],
       focus: [
-        { level: '中', title: '均一均二AZ-01利润率15.8%', desc: '低于目标16.66%，需成本复盘' },
+        { level: '中', title: '均一均二AZ-01利润率18.59%', desc: '高于红线但安全垫收窄，需成本复盘' },
         { level: '高', title: '6月现金流预测420万', desc: '低于临界值200万预警线需关注' }
       ]
     },
@@ -494,7 +494,7 @@ const MOCK_DATA = {
         { name: '新增供应商', value: '2 家', delta: '+2', note: '1材料+1施工' },
         { name: '协调事项解决', value: '3 项', delta: '+3', note: '含1项应急关闭' },
         { name: '整体进度', value: '+1.8%', delta: '↑', note: '较上周四项目均值' },
-        { name: '实际利润率', value: '17.1%', delta: '-0.3%', note: 'AZ-01拖累均值' }
+        { name: '实际利润率', value: '22.0%', delta: '-0.3%', note: 'AZ-01拖累均值' }
       ],
       byDept: [
         { dept: '商务部', detail: '产值确认1.05亿；三值对比修订版提交' },
@@ -509,13 +509,13 @@ const MOCK_DATA = {
     },
     monthly: {
       label: '月报', period: '2026年5月',
-      summary: '5月四项目累计产值1.05亿，整体进度提升3.2%，实际利润率均值17.1%。',
+      summary: '5月四项目累计产值1.05亿，整体进度提升3.2%，实际利润率均值22.0%。',
       metrics: [
         { name: '新增证照', value: '2 本', delta: '+2', note: '含1本施工相关' },
         { name: '新增供应商', value: '5 家', delta: '+5', note: '3材料2施工' },
         { name: '协调事项解决', value: '8 项', delta: '+8', note: '闭环率80%' },
         { name: '整体进度', value: '+3.2%', delta: '↑', note: '较4月末' },
-        { name: '实际利润率', value: '17.1%', delta: '-0.5%', note: '较4月均值' }
+        { name: '实际利润率', value: '22.0%', delta: '-0.5%', note: '较4月均值' }
       ],
       byDept: [
         { dept: '商务部', detail: '5月结余610万，低于预测650万；物资预警2项' },
@@ -536,7 +536,7 @@ const MOCK_DATA = {
         { name: '新增供应商', value: '12 家', delta: '+12', note: '入库审核通过' },
         { name: '协调事项解决', value: '18 项', delta: '+18', note: '含2项应急' },
         { name: '整体进度', value: '+8.5%', delta: '↑', note: '较Q1末' },
-        { name: '实际利润率', value: '17.1%', delta: '-0.8%', note: '较Q1均值' }
+        { name: '实际利润率', value: '22.0%', delta: '-0.8%', note: '较Q1均值' }
       ],
       byDept: [
         { dept: '商务部', detail: 'Q2三值对比节约率整体12.3%；2项超支Top跟踪' },
@@ -557,7 +557,7 @@ const MOCK_DATA = {
         { name: '新增供应商', value: '18 家', delta: '+18', note: 'YTD入库' },
         { name: '协调事项解决', value: '32 项', delta: '+32', note: 'YTD闭环' },
         { name: '整体进度', value: '23.6%', delta: '+23.6%', note: '较年初' },
-        { name: '实际利润率', value: '17.1%', delta: '+0.4%', note: '较2025同期' }
+        { name: '实际利润率', value: '22.0%', delta: '+0.4%', note: '较2025同期' }
       ],
       byDept: [
         { dept: '商务部', detail: 'YTD产值6.75亿；目标利润率16.66%管控有效' },
@@ -668,7 +668,7 @@ const MOCK_DATA = {
         { project: '黄埔四项目群', period: '2026-W22', author: '指挥部', summary: '四地块综合排名稳定，证照新增0本', status: '已审核' }
       ],
       monthly: [
-        { project: '黄埔四项目群', period: '2026-05', author: '商务部', summary: '5月累计产值1.05亿，利润率均值17.1%', status: '已发布' }
+        { project: '黄埔四项目群', period: '2026-05', author: '商务部', summary: '5月累计产值1.05亿，利润率均值22.0%', status: '已发布' }
       ],
       quarterly: [
         { project: '黄埔四项目群', period: '2026-Q2', author: '指挥部', summary: 'Q2累计产值3.28亿，EPC四地块全面推进', status: '编制中' }
