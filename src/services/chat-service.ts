@@ -30,6 +30,8 @@ export interface ChatCallbacks {
   onStop?: () => void;
   /** 网关对账裁决（demo 后端网关回写：pass/mismatch/reject） */
   onGatewayAudit?: (audit: { verdict: 'pass' | 'mismatch' | 'reject'; message: string; mismatched?: string[]; engineAnswer?: string }) => void;
+  /** 网关打回重算通知：清空第一轮正文，第二轮回答替换 */
+  onRetryNotice?: (info: { attempt: number; message: string }) => void;
   onMessageId?: (messageId: string) => void;
   /** 用户主动停止（不触发本地兜底） */
   onAbort?: () => void;
@@ -110,6 +112,7 @@ export async function chatWithRag(
       onComplete: (info) => callbacks.onComplete?.(info),
       onStop: () => callbacks.onStop?.(),
       onGatewayAudit: (audit) => callbacks.onGatewayAudit?.(audit),
+      onRetryNotice: (info) => callbacks.onRetryNotice?.(info),
       onMessageId: (messageId) => callbacks.onMessageId?.(messageId),
       onAbort: () => callbacks.onAbort?.(),
       onInterrupted: (info) => callbacks.onInterrupted?.(info),
