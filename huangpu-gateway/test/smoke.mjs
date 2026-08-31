@@ -136,6 +136,10 @@ try {
   const flag = await qa(tokAI, '/api/v1/knowledge-chat/s2c', { query: '伪造对比：新联01利润率情况如何', knowledge_base_ids: ['kb-1'] });
   check('T5c 非情景问题数字不一致仅标注 mismatch', flag.text.includes('"verdict":"mismatch"') && !flag.text.includes('engine_answer'));
 
+  // T5d 情景题回答含引擎数 + KB 文档事实常量（7.8%）→ pass（白名单不误伤）
+  const kbConst = await qa(tokAI, '/api/v1/knowledge-chat/s2d', { query: '新联01钢筋涨8%利润率多少（文档常量）', knowledge_base_ids: ['kb-1'] });
+  check('T5d 引擎数+文档常量回答判 pass', kbConst.text.includes('7.8%') && kbConst.text.includes('"verdict":"pass"'));
+
   // T6 指挥长用白名单外智能体 → 403
   const denyAgent = await qa(tokNing, '/api/v1/agent-chat/s3', { query: '项目进度如何', agent_id: 'builtin-smart-reasoning', knowledge_base_ids: ['kb-1'] });
   check('T6 智能体越权 403', denyAgent.status === 403 && denyAgent.text.includes('网关拦截'));

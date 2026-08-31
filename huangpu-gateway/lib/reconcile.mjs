@@ -17,8 +17,12 @@ const DELAY_RE = /延误\s*(\d+)\s*天/;
 const PAYMENT_RE = /回款延迟\s*(\d+)\s*天/;
 const PROFIT_WORDS_RE = /利润|红线|现金流|推演|挣值|回款|成本|CPI|SPI/;
 
-/** 常量白名单（PRD §7.3）：红线 16.66 / EPC 费率下浮 5 */
-const CONSTANTS = [PROFIT_RED_LINE, 5];
+/**
+ * 常量白名单：引擎口径常量（PRD §7.3：红线 16.66 / EPC 下浮 5）
+ * + KB 文档事实常量（钢筋超预算 7.8%、地下室三算 23.17%/19.24%、"全额承担"类 100%）。
+ * 情景题回答引用这些文档常量不算偏离引擎；M1 真实数据入库后由数据治理收敛此清单。
+ */
+const CONSTANTS = [PROFIT_RED_LINE, 5, 7.8, 23.17, 19.24, 100];
 
 export function findProject(q) {
   return PROJECTS.find((p) => q.includes(p.shortName) || q.includes(p.name.replace('地块', ''))) ?? null;
