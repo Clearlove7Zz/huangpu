@@ -1,0 +1,4 @@
+# 网关本地忽略（根仓库 .gitignore 已有同规则，此处便于单仓复用）
+.env
+logs/
+node_modules/
