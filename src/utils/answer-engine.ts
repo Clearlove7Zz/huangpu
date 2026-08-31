@@ -155,7 +155,7 @@ export function generateAnswer(question: string): AiAnswer {
     lines.push('');
     lines.push('管控最差：**' + worst.name + '**（成本 ' + worst.scores.cost + ' 分）。');
     if (worst.name.includes('AZ-01')) {
-      lines.push('其实际利润率 15.8% 低于红线 16.66%，主因地下室分项实际成本超测算 5.1%（筏板工程量增加 + 钢筋涨价），建议重点纠偏。');
+      lines.push('其中 AZ-01 实际利润率 18.59%，距红线 16.66% 仅 1.93 pct，主因地下室分项超支与钢筋超预算 7.8%，建议重点纠偏。');
     }
     lines.push('');
     lines.push('建议：对低分项目启动分包限额审批与三算对比复盘。');

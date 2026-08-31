@@ -18,10 +18,8 @@ export interface RagStreamEvents {
   /** 工具调用结束（成功/失败 + 输出摘要 + 耗时） */
   onToolCallEnd?: (toolCallId: string, toolName: string | undefined, success: boolean, output: string, durationMs?: number, data?: Record<string, unknown>) => void;
   /** 网关对账裁决（demo 后端网关回写；直连 WeKnora 时无此事件）
-   *  pass=数字与引擎逐位一致；mismatch=出现引擎外数字；reject=有数字但引擎未参与（含兜底答案） */
+   *  pass=引擎已参与（流程对账通过）；reject=有数字但引擎未参与（含兜底答案） */
   onGatewayAudit?: (audit: { verdict: 'pass' | 'mismatch' | 'reject'; message: string; mismatched?: string[]; engineAnswer?: string }) => void;
-  /** 网关打回重算通知：第一轮回答对账未过被拒，正文将被清空并由第二轮回答替换（服务端会话仍留痕） */
-  onRetryNotice?: (info: { attempt: number; message: string }) => void;
   /** RAG 流水线步骤（兼容旧接口：仅 tool_name） */
   onToolCall?: (toolName: string, args: unknown) => void;
   /** Agent 整轮完成（total_duration_ms / total_steps） */
@@ -380,12 +378,6 @@ function handleEvent(ev: SseEvent, events: RagStreamEvents, inlineRefs: InlineRe
         if (d.verdict === 'pass' || d.verdict === 'mismatch' || d.verdict === 'reject') {
           events.onGatewayAudit?.({ verdict: d.verdict, message: d.message ?? '', mismatched: d.mismatched, engineAnswer: d.engine_answer });
         }
-        break;
-      }
-      case 'gateway_retry': {
-        // 网关打回重算：清空第一轮正文，第二轮回答随后替换呈现
-        const d = (payload.data ?? {}) as { attempt?: number; message?: string };
-        events.onRetryNotice?.({ attempt: Number(d.attempt ?? 0), message: d.message ?? '' });
         break;
       }
       case 'complete': {

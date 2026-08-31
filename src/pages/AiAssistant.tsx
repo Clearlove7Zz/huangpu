@@ -409,13 +409,9 @@ useEffect(() => {
       onGatewayAudit: (audit) => {
         patchMessage({ gatewayAudit: { verdict: audit.verdict, message: audit.message } });
         if (audit.verdict === 'reject' && audit.engineAnswer) {
-          // 数值铁律：网关拒收了模型自算的回答，追加确定性引擎兜底答案
+          // 数值铁律：网关拒收了未走引擎的回答，追加确定性引擎兜底答案
           updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, content: `${message.content}\n\n---\n\n${audit.engineAnswer}` } : message) }));
         }
-      },
-      onRetryNotice: () => {
-        // 打回重算：清空第一轮未通过对账的正文，第二轮回答替换呈现（服务端会话仍留痕）
-        patchMessage({ content: '', gatewayAudit: undefined });
       },
       onAbort: () => {
         // 用户主动停止：仅结束当前消息，不触发任何本地兜底
