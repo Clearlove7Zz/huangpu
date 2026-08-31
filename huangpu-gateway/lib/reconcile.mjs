@@ -92,9 +92,31 @@ export function reconcile({ answerText, engine, engineCalled }) {
   }
   const allowed = [...collectEngineNumbers(engine.sim), ...CONSTANTS];
   const bad = pctNums.filter((n) => !allowed.some((a) => sameNum(a, n.value)));
-  if (bad.length) return { verdict: 'mismatch', reason: 'number_not_from_engine', mismatched: bad.map((n) => n.raw) };
+  if (bad.length) {
+    if (engine.hasFactorInput) {
+      // 情景推演问题（识别到钢筋/延误/回款因子）：回答数字必须出自引擎，
+      // 不一致即拒收交由引擎答案替换（数值铁律）——用户不应看到未背书的推演数字
+      return { verdict: 'reject', reason: 'scenario_numbers_not_from_engine', mismatched: bad.map((n) => n.raw) };
+    }
+    // 非情景利润问题：回答可能引用 KB 百分数（三算对比 23.17% 等），只标注不拒收，避免误伤
+    return { verdict: 'mismatch', reason: 'number_not_from_engine', mismatched: bad.map((n) => n.raw) };
+  }
   if (pctNums.length === 0) return { verdict: 'na', reason: 'no_numbers' }; // 回答无数值，无从对账，不发"通过"横幅
   return { verdict: 'pass', reason: 'match' };
+}
+
+/**
+ * 打回重算的返工指令（附引擎标准数）——"拒收打回给 agent"模式：
+ * 第一轮回答对账未过后，网关向同一会话以本文本为 query 追加重答请求。
+ */
+export function formatEngineFeedback(engine, mismatched = []) {
+  const r = engine.sim;
+  const p = engine.project;
+  return [
+    `【网关返工通知】你上一条回答中的数字 ${mismatched.join('、') || ''} 未通过与推演引擎的逐位对账，已被拒绝。`,
+    '请重新回答用户原来的问题：所有利润/推演数值必须逐位采用以下引擎结果，禁止自行计算或从文档推算；文档依据与定性分析正常保留。',
+    `引擎结果——项目 ${p.shortName}：基线利润率 ${r.baseline.profitRate}%；本情景推演后利润率 ${r.simulated.profitRate}%（${r.deltas.profitRate >= 0 ? '+' : ''}${r.deltas.profitRate} pct）；红线 ${PROFIT_RED_LINE}%，判定：${r.belowRedLine ? '已跌破，需启动预警' : '未跌破'}；成本冲击 ${r.simulated.costDeltaWan >= 0 ? '+' : ''}${r.simulated.costDeltaWan} 万；6 月现金流结余 ${r.simulated.cashflowJun} 万（临界 ${CRITICAL_BALANCE} 万${r.criticalCashflow ? '，已触发预警' : ''}）。`,
+  ].join('\n');
 }
 
 /** 拒收后的兜底答案：全部数字由引擎生成（样式对齐前端 answer-engine.ts） */

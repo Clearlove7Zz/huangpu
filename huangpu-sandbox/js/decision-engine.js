@@ -120,7 +120,10 @@ const DecisionEngine = (function () {
 
     const newTargetYi = base.targetYi + costDeltaWan / 10000;
     const newProfitWan = bidWan - newTargetYi * 10000;
-    const newProfitRate = +(newProfitWan / bidWan * 100).toFixed(2);
+    // 口径修复（M1）：公式只算增量、字段定水平——推演值 = 基线利润率(字段) + 公式推演值 − 公式基线值。
+    // 此前直接取公式推演值，与字段基线（17.2% vs 公式 21.98%）矛盾，导致"钢筋涨价利润反升"的方向性错误。
+    const formulaBaseRate = +((bidWan - base.targetYi * 10000) / bidWan * 100).toFixed(2);
+    const newProfitRate = +(base.profitRate + +(newProfitWan / bidWan * 100).toFixed(2) - formulaBaseRate).toFixed(2);
     const profitDelta = +(newProfitRate - base.profitRate).toFixed(2);
 
     let newProgress = +(base.progress + progressDelta).toFixed(1);

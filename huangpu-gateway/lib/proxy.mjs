@@ -115,67 +115,80 @@ function feedBlock(block, tap) {
 }
 
 /**
- * 问答代理（POST /api/v1/knowledge-chat|agent-chat/:sid）。
- * @param injectedEvents 预注入事件（网关引擎 tool_call/tool_result）
- * @param finalize 流结束回调：入参 {answerText, sawToolCall}，返回 {appendEvents}
- *                 由 server.mjs 做对账裁决、写审计、生成 gateway_audit 事件。
+ * 问答代理（POST /api/v1/knowledge-chat|agent-chat/:sid），支持打回重算。
+ * @param injectedEvents 首轮预注入事件（网关引擎 tool_call/tool_result）
+ * @param onComplete 流结束回调：入参 {tap, attempt}，可返回
+ *   { appendEvents, followUp?: {path, bodyStr} }——followUp 存在且未超次数时，
+ *   以新请求体向同一会话重发（打回给 agent 重答），事件继续写入同一客户端流。
  */
-export function proxyQa({ clientRes, target, path, bodyStr, injectedEvents, finalize }) {
-  const headers = {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
-  };
-  const up = http.request(upstreamOptions(target, 'POST', path, headers), (upRes) => {
-    const ct = String(upRes.headers['content-type'] ?? '');
-    if (!ct.includes('text/event-stream')) {
-      // 上游异常（401/500 JSON 等）：原样转发，交给前端既有降级链路
-      const chunks = [];
-      upRes.on('data', (c) => chunks.push(c));
-      upRes.on('end', () => {
-        clientRes.writeHead(upRes.statusCode, upRes.headers);
-        clientRes.end(Buffer.concat(chunks));
-      });
-      return;
-    }
-    clientRes.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-    for (const ev of injectedEvents) clientRes.write(ev);
+export function proxyQa({ clientRes, target, path, bodyStr, injectedEvents, onComplete }) {
+  const MAX_ATTEMPTS = 2; // 最多打回重算 1 次
+  let attempts = 0;
+  const run = (currentPath, currentBody, currentInjected) => {
+    attempts += 1;
+    const up = http.request(upstreamOptions(target, 'POST', currentPath, { 'Content-Type': 'application/json', Accept: 'text/event-stream' }), (upRes) => {
+      const ct = String(upRes.headers['content-type'] ?? '');
+      if (!ct.includes('text/event-stream')) {
+        // 上游异常（401/500 JSON 等）：原样转发，交给前端既有降级链路
+        const chunks = [];
+        upRes.on('data', (c) => chunks.push(c));
+        upRes.on('end', () => {
+          if (!clientRes.headersSent) clientRes.writeHead(upRes.statusCode, upRes.headers);
+          clientRes.end(Buffer.concat(chunks));
+        });
+        return;
+      }
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+      }
+      for (const ev of currentInjected) clientRes.write(ev);
 
-    const tap = { answerText: '', sawToolCall: false, leftover: '' };
-    const dec = new TextDecoder('utf-8');
-    const feed = (raw) => {
-      tap.leftover += raw;
-      let idx;
-      while ((idx = tap.leftover.indexOf('\n\n')) !== -1) {
-        const block = tap.leftover.slice(0, idx);
-        tap.leftover = tap.leftover.slice(idx + 2);
-        feedBlock(block, tap);
-      }
-    };
-    upRes.on('data', (c) => {
-      const s = dec.decode(c, { stream: true });
-      feed(s);
-      clientRes.write(s);
+      const tap = { answerText: '', sawToolCall: false, leftover: '' };
+      const dec = new TextDecoder('utf-8');
+      const feed = (raw) => {
+        tap.leftover += raw;
+        let idx;
+        while ((idx = tap.leftover.indexOf('\n\n')) !== -1) {
+          const block = tap.leftover.slice(0, idx);
+          tap.leftover = tap.leftover.slice(idx + 2);
+          feedBlock(block, tap);
+        }
+      };
+      upRes.on('data', (c) => {
+        const s = dec.decode(c, { stream: true });
+        feed(s);
+        clientRes.write(s);
+      });
+      upRes.on('end', async () => {
+        feed(dec.decode());
+        if (tap.leftover.trim()) feedBlock(tap.leftover, tap);
+        let result = { appendEvents: [] };
+        try {
+          result = (await onComplete({ tap, attempt: attempts })) ?? result;
+        } catch (err) {
+          console.error('[gateway] 对账失败（不影响已转发内容）', err);
+        }
+        for (const ev of result.appendEvents ?? []) clientRes.write(ev);
+        if (result.followUp && attempts < MAX_ATTEMPTS) {
+          run(result.followUp.path, result.followUp.bodyStr, []);
+          return; // 客户端流由下一次尝试收尾
+        }
+        clientRes.end();
+      });
     });
-    upRes.on('end', () => {
-      feed(dec.decode());
-      if (tap.leftover.trim()) feedBlock(tap.leftover, tap);
-      let fin = { appendEvents: [] };
-      try {
-        fin = finalize(tap) ?? fin;
-      } catch (err) {
-        console.error('[gateway] 对账失败（不影响已转发内容）', err);
-      }
-      for (const ev of fin.appendEvents ?? []) clientRes.write(ev);
-      clientRes.end();
+    up.on('error', (err) => {
+      console.error(`[gateway] 上游错误（第 ${attempts} 次）`, err.message);
+      if (!clientRes.headersSent) sendJson(clientRes, 502, { error: '网关：WeKnora 上游不可达（前端将自动降级本地引擎）' });
+      else clientRes.end();
     });
-  });
-  up.on('error', () => sendJson(clientRes, 502, { error: '网关：WeKnora 上游不可达（前端将自动降级本地引擎）' }));
-  up.setTimeout(120000, () => up.destroy(new Error('upstream timeout')));
-  clientRes.on('close', () => up.destroy());
-  up.end(bodyStr);
+    up.setTimeout(120000, () => up.destroy(new Error('upstream timeout')));
+    clientRes.on('close', () => up.destroy());
+    up.end(currentBody);
+  };
+  run(path, bodyStr, injectedEvents);
 }

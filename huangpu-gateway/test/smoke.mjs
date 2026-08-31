@@ -109,15 +109,22 @@ try {
   // T4 商务部问利润：引擎注入 + 对账 pass
   const ok = await qa(tokAI, '/api/v1/knowledge-chat/s1', { query: '新联01钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'], channel: 'web' });
   check('T4a 流中注入 run_scenario 工具事件', ok.text.includes('"tool_name":"run_scenario"'));
-  check('T4b 回答数字与引擎一致且对账 pass', ok.text.includes('20.85%') && ok.text.includes('"verdict":"pass"'), `HTTP ${ok.status}`);
+  check('T4b 回答数字与引擎一致且对账 pass', ok.text.includes('16.07%') && ok.text.includes('"verdict":"pass"'), `HTTP ${ok.status}`);
 
-  // T5 伪造数字 → mismatch
+  // T5 情景推演问题含引擎外数字 → 打回重算（第二轮 mock 给出正确答案 → 最终 pass）
   const bad2 = await qa(tokAI, '/api/v1/knowledge-chat/s2', { query: '伪造测试：新联01钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'] });
-  check('T5 引擎外数字判 mismatch', bad2.text.includes('"verdict":"mismatch"') && bad2.text.includes('25.3%'));
+  check(
+    'T5 情景推演数字不一致打回重算且二轮通过',
+    bad2.text.includes('gateway_retry') && bad2.text.includes('16.07%') && bad2.text.includes('"verdict":"pass"'),
+  );
 
   // T5b 利润问题但回答无任何数字 → na（不回写对账横幅，避免"无意义绿灯"）
   const noNum = await qa(tokAI, '/api/v1/knowledge-chat/s2b', { query: '新联01利润率受什么因素影响（无数）', knowledge_base_ids: ['kb-1'] });
   check('T5b 无数字回答不发出对账横幅', !noNum.text.includes('gateway_audit'), noNum.text.slice(-120).replace(/\n/g, ' '));
+
+  // T5c 非情景利润问题数字不一致 → mismatch（只标注不拒收，避免误伤 KB 引文）
+  const flag = await qa(tokAI, '/api/v1/knowledge-chat/s2c', { query: '伪造对比：新联01利润率情况如何', knowledge_base_ids: ['kb-1'] });
+  check('T5c 非情景问题数字不一致仅标注 mismatch', flag.text.includes('"verdict":"mismatch"') && !flag.text.includes('engine_answer'));
 
   // T6 指挥长用白名单外智能体 → 403
   const denyAgent = await qa(tokNing, '/api/v1/agent-chat/s3', { query: '项目进度如何', agent_id: 'builtin-smart-reasoning', knowledge_base_ids: ['kb-1'] });
@@ -144,15 +151,15 @@ try {
   const rej = await qa(tokAI, '/api/v1/knowledge-chat/s5', { query: '新联01钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'] });
   check(
     'T9 引擎禁用时模型自算被拒收 + 引擎兜底答案',
-    rej.text.includes('"verdict":"reject"') && rej.text.includes('engine_answer') && rej.text.includes('20.85%'),
+    rej.text.includes('"verdict":"reject"') && rej.text.includes('engine_answer') && rej.text.includes('16.07%'),
   );
 
   // T10 审计落盘
   const lines = fs.readFileSync(AUDIT, 'utf8').trim().split('\n').slice(auditLinesBefore);
   const actions = new Set(lines.map((l) => JSON.parse(l).action));
   check(
-    'T10 审计日志覆盖 login/chat/deny',
-    actions.has('login') && actions.has('chat') && actions.has('deny_profit') && actions.has('deny_agent'),
+    'T10 审计日志覆盖 login/chat/deny/sendback',
+    actions.has('login') && actions.has('chat') && actions.has('deny_profit') && actions.has('deny_agent') && actions.has('chat_sendback'),
     `新增 ${lines.length} 条，动作: ${[...actions].join('/')}`,
   );
   const chatLine = lines.map((l) => JSON.parse(l)).find((l) => l.action === 'chat' && l.verdict === 'pass');

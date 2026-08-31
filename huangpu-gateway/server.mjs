@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { login, verifyToken, tokenFromRequest } from './lib/auth.mjs';
 import { getRbac } from './lib/rbac.mjs';
-import { engineForQuery, reconcile, formatEngineAnswer } from './lib/reconcile.mjs';
+import { engineForQuery, reconcile, formatEngineAnswer, formatEngineFeedback } from './lib/reconcile.mjs';
 import { applyCors, sendJson, readBody, proxyPassthrough, proxyQa, sseEvent, upstreamJson } from './lib/proxy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -118,17 +118,18 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
   const injected = [];
   if (engineCalled) injected.push(buildToolEvents(engine));
 
-  // ⑤ 转发 + SSE 旁路监听 + 流结束后对账
+  // ⑤ 转发 + SSE 旁路监听 + 流结束后对账（情景推演数字不一致可打回 agent 重算一次）
   proxyQa({
     clientRes,
     target: TARGET,
     path: qaPath,
     bodyStr: JSON.stringify(body),
     injectedEvents: injected,
-    finalize: (tap) => {
+    onComplete: async ({ tap, attempt }) => {
       const verdict = reconcile({ answerText: tap.answerText, engine, engineCalled });
       audit({
         action: 'chat',
+        attempt,
         user: payload.name,
         role: payload.role,
         query,
@@ -145,24 +146,49 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
       if (verdict.verdict === 'pass') {
         appendEvents.push(sseEvent({
           response_type: 'gateway_audit',
-          data: { verdict: 'pass', message: '网关对账通过：回答数字与推演引擎逐位一致' },
+          data: { verdict: 'pass', attempt, message: `网关对账通过（第 ${attempt} 轮）：回答数字与推演引擎逐位一致` },
         }));
       } else if (verdict.verdict === 'mismatch') {
         appendEvents.push(sseEvent({
           response_type: 'gateway_audit',
           data: {
             verdict: 'mismatch',
+            attempt,
             mismatched: verdict.mismatched,
             message: `网关对账不一致：回答中的 ${verdict.mismatched.join('、')} 不是引擎计算结果，已标记待人工复核`,
           },
         }));
       } else if (verdict.verdict === 'reject') {
+        // 打回重算：情景推演问题数字与引擎不一致时，向同一会话追加重答请求（最多一次）；
+        // 引擎被禁用（ENGINE_DISABLED）或已是第二轮则不再打回，直接引擎兜底
+        const retryable = verdict.reason === 'scenario_numbers_not_from_engine' && !ENGINE_DISABLED && attempt < 2;
+        if (retryable) {
+          audit({
+            action: 'chat_sendback',
+            attempt,
+            user: payload.name,
+            role: payload.role,
+            query,
+            mismatched: verdict.mismatched,
+          });
+          return {
+            appendEvents: [sseEvent({
+              response_type: 'gateway_retry',
+              data: { attempt: attempt + 1, mismatched: verdict.mismatched, message: `首次回答未通过对账（${verdict.mismatched.join('、')} 与引擎不一致），已打回重新生成` },
+            })],
+            followUp: { path: qaPath, bodyStr: JSON.stringify({ ...body, query: formatEngineFeedback(engine, verdict.mismatched) }) },
+          };
+        }
+        const message = verdict.reason === 'scenario_numbers_not_from_engine'
+          ? `网关对账拒收：情景推演回答中的 ${verdict.mismatched.join('、')} 与推演引擎结果不一致，以下方引擎结果为准`
+          : '网关对账拒收：回答含数字但推演引擎未参与计算（数值铁律），以下为本地引擎结果';
         appendEvents.push(sseEvent({
           response_type: 'gateway_audit',
           data: {
             verdict: 'reject',
+            attempt,
             engine_answer: formatEngineAnswer(engine),
-            message: '网关对账拒收：回答含数字但推演引擎未参与计算（数值铁律），以下为本地引擎结果',
+            message,
           },
         }));
       }
