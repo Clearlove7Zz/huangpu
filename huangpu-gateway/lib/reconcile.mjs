@@ -93,6 +93,7 @@ export function reconcile({ answerText, engine, engineCalled }) {
   const allowed = [...collectEngineNumbers(engine.sim), ...CONSTANTS];
   const bad = pctNums.filter((n) => !allowed.some((a) => sameNum(a, n.value)));
   if (bad.length) return { verdict: 'mismatch', reason: 'number_not_from_engine', mismatched: bad.map((n) => n.raw) };
+  if (pctNums.length === 0) return { verdict: 'na', reason: 'no_numbers' }; // 回答无数值，无从对账，不发"通过"横幅
   return { verdict: 'pass', reason: 'match' };
 }
 

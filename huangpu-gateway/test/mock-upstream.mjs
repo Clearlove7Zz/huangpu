@@ -49,9 +49,13 @@ http
           }
         })();
         const bad = q.includes('伪造');
+        const noNumbers = q.includes('无数'); // 无数字回答：对账应判 na，不回写横幅
         res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
         res.write(sse({ response_type: 'thinking', content: '思考中', done: true }));
-        res.write(sse({ response_type: 'answer', content: bad ? '利润率将变为 25.3%' : '利润率将由 17.2% 变为 20.85%（+3.65 pct）' }));
+        res.write(sse({
+          response_type: 'answer',
+          content: bad ? '利润率将变为 25.3%' : noNumbers ? '利润率受钢筋价格、工期、回款节奏等多重因素影响。' : '利润率将由 17.2% 变为 20.85%（+3.65 pct）',
+        }));
         res.write(sse({ response_type: 'complete', data: { total_duration_ms: 12, total_steps: 1 } }));
         res.end();
         return;

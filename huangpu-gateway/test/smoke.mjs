@@ -115,6 +115,10 @@ try {
   const bad2 = await qa(tokAI, '/api/v1/knowledge-chat/s2', { query: '伪造测试：新联01钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'] });
   check('T5 引擎外数字判 mismatch', bad2.text.includes('"verdict":"mismatch"') && bad2.text.includes('25.3%'));
 
+  // T5b 利润问题但回答无任何数字 → na（不回写对账横幅，避免"无意义绿灯"）
+  const noNum = await qa(tokAI, '/api/v1/knowledge-chat/s2b', { query: '新联01利润率受什么因素影响（无数）', knowledge_base_ids: ['kb-1'] });
+  check('T5b 无数字回答不发出对账横幅', !noNum.text.includes('gateway_audit'), noNum.text.slice(-120).replace(/\n/g, ' '));
+
   // T6 指挥长用白名单外智能体 → 403
   const denyAgent = await qa(tokNing, '/api/v1/agent-chat/s3', { query: '项目进度如何', agent_id: 'builtin-smart-reasoning', knowledge_base_ids: ['kb-1'] });
   check('T6 智能体越权 403', denyAgent.status === 403 && denyAgent.text.includes('网关拦截'));
