@@ -1,4 +1,5 @@
 import { RAG_CONFIG, ragReady } from '../config/rag-config';
+import { gatewayHeaders } from '../config/gateway-auth';
 
 /** WeKnora SSE 流式客户端（knowledge-chat / agent-chat） */
 
@@ -16,6 +17,9 @@ export interface RagStreamEvents {
   onToolCallStart?: (toolCallId: string, toolName: string, args: unknown) => void;
   /** 工具调用结束（成功/失败 + 输出摘要 + 耗时） */
   onToolCallEnd?: (toolCallId: string, toolName: string | undefined, success: boolean, output: string, durationMs?: number, data?: Record<string, unknown>) => void;
+  /** 网关对账裁决（demo 后端网关回写；直连 WeKnora 时无此事件）
+   *  pass=数字与引擎逐位一致；mismatch=出现引擎外数字；reject=有数字但引擎未参与（含兜底答案） */
+  onGatewayAudit?: (audit: { verdict: 'pass' | 'mismatch' | 'reject'; message: string; mismatched?: string[]; engineAnswer?: string }) => void;
   /** RAG 流水线步骤（兼容旧接口：仅 tool_name） */
   onToolCall?: (toolName: string, args: unknown) => void;
   /** Agent 整轮完成（total_duration_ms / total_steps） */
@@ -49,7 +53,7 @@ export function abortCurrentRag(): void {
   currentAbortRef.messageId = '';
 
   // 同时通知 WeKnora 后端真的停止生成（不仅关闭前端 SSE 连接）
-  if (sessionId && messageId && RAG_CONFIG.apiKey !== undefined) {
+  if (sessionId && messageId) {
     void notifyBackendStop(sessionId, messageId);
   }
 }
@@ -57,11 +61,9 @@ export function abortCurrentRag(): void {
 /** 调 WeKnora 后端 stop endpoint（fire-and-forget；失败也不影响前端 abort） */
 async function notifyBackendStop(sessionId: string, messageId: string): Promise<void> {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
     await fetch(`${RAG_CONFIG.baseUrl}/sessions/${sessionId}/stop`, {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json', ...gatewayHeaders() },
       body: JSON.stringify({ message_id: messageId }),
     });
   } catch {
@@ -127,11 +129,9 @@ function extractReferences(payload: ChatResponseEvent): RagReference[] | null {
 export async function deleteRemoteSession(sessionId: string): Promise<void> {
   if (!ragReady() || !sessionId) return;
   try {
-    const headers: Record<string, string> = {};
-    if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
     await fetch(`${RAG_CONFIG.baseUrl}/sessions/${sessionId}`, {
       method: 'DELETE',
-      headers,
+      headers: gatewayHeaders(),
     });
   } catch {
     // 远端删除失败不影响本地删除
@@ -170,8 +170,8 @@ export async function streamKnowledgeChat(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...gatewayHeaders(),
   };
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
 
   let sid = sessionId ?? '';
   try {
@@ -326,6 +326,14 @@ function handleEvent(ev: SseEvent, events: RagStreamEvents, inlineRefs: InlineRe
         events.onToolCallEnd?.(toolCallId, toolName, success, output, dataPayload?.duration_ms ?? dataPayload?.duration, dataPayload as Record<string, unknown> | undefined);
         break;
       }
+      case 'gateway_audit': {
+        // 网关对账裁决（huangpu-gateway 回写，流末尾追加）
+        const d = (payload.data ?? {}) as { verdict?: string; message?: string; mismatched?: string[]; engine_answer?: string };
+        if (d.verdict === 'pass' || d.verdict === 'mismatch' || d.verdict === 'reject') {
+          events.onGatewayAudit?.({ verdict: d.verdict, message: d.message ?? '', mismatched: d.mismatched, engineAnswer: d.engine_answer });
+        }
+        break;
+      }
       case 'complete': {
         events.onComplete?.({
           totalDurationMs: dataPayload?.total_duration_ms,
@@ -404,8 +412,7 @@ export async function continueKnowledgeStream(
   events: RagStreamEvents,
 ): Promise<void> {
   if (!ragReady() || !sessionId || !messageId) return;
-  const headers: Record<string, string> = {};
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = gatewayHeaders();
 
   const controller = new AbortController();
   currentAbortRef.controller = controller;
@@ -456,12 +463,10 @@ export interface RemoteMessage {
  */
 export async function listRemoteMessages(sessionId: string, beforeTime?: string, limit = 20): Promise<RemoteMessage[]> {
   if (!ragReady() || !sessionId) return [];
-  const headers: Record<string, string> = {};
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
   const params = new URLSearchParams({ limit: String(limit) });
   if (beforeTime) params.set('before_time', beforeTime);
   try {
-    const res = await fetch(`${RAG_CONFIG.baseUrl}/messages/${sessionId}/load?${params.toString()}`, { headers });
+    const res = await fetch(`${RAG_CONFIG.baseUrl}/messages/${sessionId}/load?${params.toString()}`, { headers: gatewayHeaders() });
     if (!res.ok) return [];
     const json = (await res.json()) as { data?: RemoteMessage[] };
     return Array.isArray(json.data) ? json.data : [];

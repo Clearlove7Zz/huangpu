@@ -32,6 +32,8 @@ interface ChatMsg {
   source?: 'rag' | 'local';
   remoteMessageId?: string;
   artifacts?: ArtifactMeta[];
+  /** 网关对账裁决（demo 后端网关回写，直连 WeKnora 时无） */
+  gatewayAudit?: { verdict: 'pass' | 'mismatch' | 'reject'; message: string };
   /** 时间轴事件流（thinking 多轮 + tool_call/result 配对，按到达顺序） */
   timeline?: TimelineEvent[];
   startedAt?: number;
@@ -383,6 +385,13 @@ useEffect(() => {
         else if (toolName.includes('rerank')) setAssistantState('organizing');
         else if (toolName.includes('understand') || toolName.includes('query')) setAssistantState('understanding');
       },
+      onGatewayAudit: (audit) => {
+        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, gatewayAudit: { verdict: audit.verdict, message: audit.message } } : message) }));
+        if (audit.verdict === 'reject' && audit.engineAnswer) {
+          // 数值铁律：网关拒收了模型自算的回答，追加确定性引擎兜底答案
+          updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, content: `${message.content}\n\n---\n\n${audit.engineAnswer}` } : message) }));
+        }
+      },
       onThinkingDelta: (eventId, delta, done, durationMs) => {
         patchTimeline(sessionId, aiMsg.id, (events) => {
           const existing = events.find((e) => e.kind === 'thinking' && e.id === eventId);
@@ -516,6 +525,7 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
               {message.content && <div className="ai-message-content">{message.role === 'ai' ? <MarkdownView source={message.content} /> : message.content}</div>}
               {message.attachments && message.attachments.length > 0 && <div className="ai-message-attachments">{message.attachments.map((file) => <Tag key={file.id} icon={<PaperClipOutlined />}>{file.name}</Tag>)}</div>}
               {message.source && !message.streaming && <div className="ai-source-badge"><span className={`ai-source-dot ai-source-dot-${message.source}`} />{message.source === 'rag' ? 'RAG 在线回答' : '本地演示引擎'}</div>}
+              {message.gatewayAudit && !message.streaming && <div className={`ai-gateway-audit ai-gateway-audit-${message.gatewayAudit.verdict}`}>{message.gatewayAudit.verdict === 'pass' ? '✓ ' : '⚠ '}{message.gatewayAudit.message}</div>}
               {message.artifacts && <ArtifactList artifacts={message.artifacts} onDownload={async (artifact) => {
                 const remoteSessionId = activeRagSessionId ?? active.ragSessionId;
                 if (!remoteSessionId || !message.remoteMessageId) return;

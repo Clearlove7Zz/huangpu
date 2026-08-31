@@ -1,4 +1,5 @@
 import { RAG_CONFIG, ragReady } from '../config/rag-config';
+import { gatewayHeaders } from '../config/gateway-auth';
 
 export type TemporaryAttachmentStatus = 'uploaded' | 'processing' | 'ready' | 'failed';
 
@@ -23,7 +24,7 @@ interface AttachmentResponse {
 }
 
 function headers(): HeadersInit {
-  return RAG_CONFIG.apiKey ? { 'X-API-Key': RAG_CONFIG.apiKey } : {};
+  return gatewayHeaders();
 }
 
 function mapAttachment(data: NonNullable<AttachmentResponse['data']>, progress?: number): TemporaryAttachment {
@@ -59,7 +60,7 @@ export function uploadTemporaryAttachment(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${RAG_CONFIG.baseUrl}/sessions/${sessionId}/attachments`);
-    if (RAG_CONFIG.apiKey) xhr.setRequestHeader('X-API-Key', RAG_CONFIG.apiKey);
+    for (const [name, value] of Object.entries(gatewayHeaders())) xhr.setRequestHeader(name, value);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress?.(Math.round((event.loaded * 100) / event.total));
     };

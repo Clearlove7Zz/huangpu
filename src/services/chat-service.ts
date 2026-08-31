@@ -28,6 +28,8 @@ export interface ChatCallbacks {
   onComplete?: (info: { totalDurationMs?: number; totalSteps?: number }) => void;
   /** 服务端确认停止 */
   onStop?: () => void;
+  /** 网关对账裁决（demo 后端网关回写：pass/mismatch/reject） */
+  onGatewayAudit?: (audit: { verdict: 'pass' | 'mismatch' | 'reject'; message: string; mismatched?: string[]; engineAnswer?: string }) => void;
   onMessageId?: (messageId: string) => void;
   /** 用户主动停止（不触发本地兜底） */
   onAbort?: () => void;
@@ -105,6 +107,7 @@ export async function chatWithRag(
       onToolCall: (toolName, args) => callbacks.onToolCall?.(toolName, args),
       onComplete: (info) => callbacks.onComplete?.(info),
       onStop: () => callbacks.onStop?.(),
+      onGatewayAudit: (audit) => callbacks.onGatewayAudit?.(audit),
       onMessageId: (messageId) => callbacks.onMessageId?.(messageId),
       onAbort: () => callbacks.onAbort?.(),
       onError: () => {

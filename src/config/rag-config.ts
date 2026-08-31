@@ -1,20 +1,17 @@
 /**
- * RAG 服务配置（WeKnora）
- * - 开发环境：走 vite 代理 /api/v1 → http://127.0.0.1:8080（见 vite.config.ts）
- * - 生产环境：改成 WeKnora 实际地址（如 https://rag.example.com/api/v1）
+ * RAG 服务配置（经后端网关访问 WeKnora）
+ * - 开发环境：走 vite 代理 /api/v1 → 后端网关 http://127.0.0.1:8090（见 vite.config.ts），
+ *   网关再转发 WeKnora 并执行角色调度 / 凭据持有 / 输出对账（工作区 huangpu-gateway/）。
+ * - 生产环境：改成网关实际地址（如 https://gw.example.com/api/v1）。
  *
- * apiKey 为 WeKnora 签发的 scoped API Key（WebUI → 密钥管理）。
- * 未填或服务不可用时，前端自动降级为本地规则引擎（answer-engine）。
+ * WeKnora scoped API Key 由网关持有（网关 .env），浏览器仅持网关令牌（gateway-auth.ts），
+ * 未登录或网关/服务不可用时，前端自动降级为本地规则引擎（answer-engine）。
  */
 export const RAG_CONFIG = {
   /** 总开关：false 时永远走本地演示引擎 */
   enabled: true,
-  /** API 基础路径（含 /api/v1） */
+  /** API 基础路径（含 /api/v1，实际指向后端网关） */
   baseUrl: '/api/v1',
-  /** WeKnora scoped API Key（在 WebUI 密钥管理中创建后填入）
-   *  通过 Vite 环境变量 VITE_RAG_API_KEY 注入（见 .env.local，不入版本库）。
-   *  未填或服务不可用时，前端自动降级为本地规则引擎（answer-engine）。 */
-  apiKey: import.meta.env.VITE_RAG_API_KEY ?? '',
   /** 知识库 ID 列表（可在 WebUI 知识库详情 URL 中查看） */
   knowledgeBaseIds: ['173b5610-d346-40d3-aee0-b0ff229a673a'],
   /** 自定义 Agent ID（预留：后续配置利润研判 Agent 后填写） */
@@ -30,5 +27,6 @@ export const RAG_CONFIG = {
 };
 
 export function ragReady(): boolean {
-  return RAG_CONFIG.enabled && Boolean(RAG_CONFIG.apiKey) && RAG_CONFIG.knowledgeBaseIds.length > 0;
+  // 网关令牌由请求头动态附加（gatewayHeaders），此处不再要求本端持有任何密钥
+  return RAG_CONFIG.enabled && RAG_CONFIG.knowledgeBaseIds.length > 0;
 }

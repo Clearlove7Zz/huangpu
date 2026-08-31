@@ -1,4 +1,5 @@
 import { RAG_CONFIG, ragReady } from '../config/rag-config';
+import { gatewayHeaders } from '../config/gateway-auth';
 
 /** WeKnora 知识库管理客户端（文档管理页 = 知识库管理界面） */
 
@@ -42,9 +43,9 @@ export interface KbFolderTree {
 
 async function request(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
   const headers: Record<string, string> = {
+    ...gatewayHeaders(),
     ...((init?.headers as Record<string, string> | undefined) ?? {}),
   };
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
   const res = await fetch(`${RAG_CONFIG.baseUrl}${path}`, { ...init, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -91,8 +92,7 @@ export async function listKnowledge(kbId: string, page = 1, pageSize = 200): Pro
 export async function uploadKnowledgeFile(kbId: string, file: File): Promise<void> {
   const form = new FormData();
   form.append('file', file);
-  const headers: Record<string, string> = {};
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = gatewayHeaders();
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge-bases/${kbId}/knowledge/file`, {
     method: 'POST',
     headers,
@@ -106,8 +106,7 @@ export async function uploadKnowledgeFile(kbId: string, file: File): Promise<voi
 
 /** 删除单个知识 */
 export async function deleteKnowledge(knowledgeId: string): Promise<void> {
-  const headers: Record<string, string> = {};
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = gatewayHeaders();
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge/${knowledgeId}`, {
     method: 'DELETE',
     headers,
@@ -117,8 +116,7 @@ export async function deleteKnowledge(knowledgeId: string): Promise<void> {
 
 /** 预览知识原文（文本类文件在新窗口打开） */
 export async function previewKnowledge(knowledgeId: string): Promise<string> {
-  const headers: Record<string, string> = {};
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = gatewayHeaders();
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge/${knowledgeId}/preview`, { headers });
   if (!res.ok) throw new Error(`预览失败 HTTP ${res.status}`);
   return res.text();
@@ -137,8 +135,7 @@ export async function listKnowledgeFolders(kbId: string): Promise<KbFolderTree> 
 
 /** 移动知识到文件夹（folder_path 不存在时会自动创建） */
 export async function moveKnowledgeToFolder(kbId: string, knowledgeIds: string[], folderPath: string): Promise<void> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...gatewayHeaders() };
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge/folder`, {
     method: 'POST',
     headers,
@@ -152,8 +149,7 @@ export async function moveKnowledgeToFolder(kbId: string, knowledgeIds: string[]
 
 /** 创建知识库（前端"新建文件夹"） */
 export async function createKnowledgeBase(name: string, description = ''): Promise<string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...gatewayHeaders() };
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge-bases`, {
     method: 'POST',
     headers,
@@ -169,8 +165,7 @@ export async function createKnowledgeBase(name: string, description = ''): Promi
 
 /** 重命名知识库（前端"重命名文件夹"） */
 export async function renameKnowledgeBase(kbId: string, name: string): Promise<void> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...gatewayHeaders() };
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge-bases/${kbId}`, {
     method: 'PUT',
     headers,
@@ -181,8 +176,7 @@ export async function renameKnowledgeBase(kbId: string, name: string): Promise<v
 
 /** 删除知识库（前端"删除文件夹"，连带文件） */
 export async function deleteKnowledgeBase(kbId: string): Promise<void> {
-  const headers: Record<string, string> = {};
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = gatewayHeaders();
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge-bases/${kbId}`, {
     method: 'DELETE',
     headers,
@@ -197,8 +191,7 @@ export async function moveKnowledgeAcrossKb(
   knowledgeIds: string[],
   mode: 'reuse_vectors' | 'reparse' = 'reuse_vectors',
 ): Promise<void> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (RAG_CONFIG.apiKey) headers['X-API-Key'] = RAG_CONFIG.apiKey;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...gatewayHeaders() };
   const res = await fetch(`${RAG_CONFIG.baseUrl}/knowledge/move`, {
     method: 'POST',
     headers,

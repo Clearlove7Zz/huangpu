@@ -1,4 +1,5 @@
 import { RAG_CONFIG, ragReady } from '../config/rag-config';
+import { gatewayHeaders } from '../config/gateway-auth';
 
 export interface ArtifactMeta {
   index: number;
@@ -11,7 +12,7 @@ export interface ArtifactMeta {
 }
 
 function headers(): HeadersInit {
-  return RAG_CONFIG.apiKey ? { 'X-API-Key': RAG_CONFIG.apiKey } : {};
+  return gatewayHeaders();
 }
 
 export async function listSessionArtifacts(sessionId: string): Promise<ArtifactMeta[]> {
