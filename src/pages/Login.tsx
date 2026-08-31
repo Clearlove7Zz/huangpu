@@ -6,14 +6,33 @@ import { ROLE_OPTIONS, TEST_ACCOUNT, useAuth } from '../auth';
 
 const { Title, Text } = Typography;
 
+/** 演示身份 → 网关演示账号（角色由账号密码决定，下拉框只做快捷填充） */
+const DEMO_ACCOUNTS: Record<string, { username: string; password: string }> = {
+  '指挥部-商务部': { username: 'ai', password: 'ai123' },
+  '指挥部-财务部': { username: 'wang', password: 'wang123' },
+  '股份领导/指挥长': { username: 'ning', password: 'ning123' },
+  '指挥部-工程技术部': { username: 'cao', password: 'cao123' },
+  '指挥部-外协部': { username: 'wu', password: 'wu123' },
+  '安全员': { username: 'xiong', password: 'xiong123' },
+  '全权限测试账号': { username: 'admin', password: 'admin123' },
+};
+
 export default function Login() {
   const { login, loginWithGateway } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [form] = Form.useForm();
   const [role, setRole] = useState<string>('指挥部-商务部');
   const [submitting, setSubmitting] = useState(false);
 
   const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname || '/dashboard';
+
+  // 选择演示身份 = 自动填入对应账号密码（角色由网关按凭据认定，下拉框本身不决定权限）
+  const handleRoleChange = (r: string) => {
+    setRole(r);
+    const account = DEMO_ACCOUNTS[r];
+    if (account) form.setFieldsValue({ username: account.username, password: account.password });
+  };
 
   // 登录次序：网关鉴权（huangpu-gateway，签发令牌 + 角色权限）→ 网关不可用时回退
   // 前端演示模式（mock 登录，无服务端校验）。网关明确拒绝（密码错等）则提示并留在本页。
@@ -113,7 +132,7 @@ export default function Login() {
           </Text>
         </div>
 
-        <Form layout="vertical" onFinish={handleSubmit}>
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item label="用户名" name="username" initialValue="ai">
             <Input prefix={<UserOutlined style={{ color: 'rgba(31, 35, 40, 0.35)' }} />} placeholder="请输入用户名" />
           </Form.Item>
@@ -123,8 +142,8 @@ export default function Login() {
           <Form.Item label="短信验证码" name="sms" initialValue="888888">
             <Input prefix={<MobileOutlined style={{ color: 'rgba(31, 35, 40, 0.35)' }} />} placeholder="请输入验证码" />
           </Form.Item>
-          <Form.Item label="登录角色" required>
-            <Select value={role} onChange={setRole} options={ROLE_OPTIONS.map((r) => ({ value: r, label: r }))} />
+          <Form.Item label="演示身份（选择后自动填入账号）" required>
+            <Select value={role} onChange={handleRoleChange} options={ROLE_OPTIONS.map((r) => ({ value: r, label: r }))} />
           </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
             <Button type="primary" htmlType="submit" block size="large" loading={submitting}>
@@ -133,7 +152,7 @@ export default function Login() {
           </Form.Item>
         </Form>
         <Text type="secondary" style={{ display: 'block', marginTop: 14, fontSize: 12, textAlign: 'center' }}>
-          演示账号：ai/ai123（商务部）· xiong/xiong123（安全员，无利润权限）
+          选身份自动填账号（角色由凭据认定）· 密码错误会被网关拒绝，不再放行任意凭据
         </Text>
       </Card>
     </div>
