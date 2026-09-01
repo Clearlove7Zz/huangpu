@@ -1,7 +1,7 @@
-# 黄埔城更数字沙盘 · demo 后端网关
+# 黄埔城更数字沙盘 · demo 后端网关 + 引擎 MCP 服务
 
-浏览器与 WeKnora 之间的收权层，PRD §7.3「后端网关」四职责的 demo 最小闭环。
-零 npm 依赖（Node ≥18 内置模块），`node server.mjs` 直接运行。
+浏览器与 WeKnora 之间的收权层（PRD §7.3「后端网关」四职责）+ 独立利润推演引擎 MCP 服务（PRD 附录 D，AD-09）。
+网关零 npm 依赖（Node ≥18 内置模块）；引擎 MCP 服务用官方 SDK（`engine-mcp/` 内独立 package.json，网关本体不受影响）。
 
 ## 架构
 
@@ -10,69 +10,74 @@
                                        ├─ /api/auth/login     demo 登录 → HMAC 令牌
                                        ├─ /api/v1/*           透明代理（要求网关令牌）
                                        │    └─ 问答请求：角色调度 → KB 白名单过滤
-                                       │        → 引擎代调注入 → SSE 旁路对账 → 裁决事件
-                                       ├─ 内置推演引擎        decision-engine.ts 移植（lib/engine.mjs）
+                                       │        → SSE 旁路对账（按上游引擎工具调用记录裁决）
+                                       ├─ 引擎兜底出数        lib/engine.mjs（仅拒收时使用，不代调）
                                        └─ 审计                logs/gateway-audit.jsonl
+
+Agent 模型 ──原生 tool calling──▶ WeKnora MCP client ──streamable HTTP──▶ engine-mcp :18095
+                                                                     （run_scenario / get_baseline /
+                                                                       get_current_status / list_presets）
 ```
 
-## 四职责对照（PRD §7.3）
+## 启动
+
+```bash
+# 1. WeKnora（docker compose，weknora-local/）——.env 已配 NO_PROXY/SSRF_WHITELIST_EXTRA 放行 host.docker.internal
+# 2. 引擎 MCP 服务（宿主机，18095）
+cd engine-mcp && npm install && node server.mjs
+# 3. 网关（8090）
+node server.mjs            # 或 start-gateway.bat
+# 4. 前端
+cd ../huangpu-react && npm run dev   # vite 已把 /api/v1 与 /api/auth 代理到 :8090
+```
+
+## 四职责对照（PRD §7.3 + AD-09）
 
 | 职责 | 实现位置 | 说明 |
 |------|----------|------|
-| ① 认证 + 角色调度 | `lib/auth.mjs` + `lib/rbac.mjs` + `server.mjs` handleQa | demo 登录签发 HMAC 令牌；智能体白名单（白名单外 403，未指定注入角色默认）；知识库按角色关键词过滤；无利润权限的角色问利润直接 403 |
-| ② 凭据持有 | `.env` + `lib/proxy.mjs` | WeKnora scoped key 只在网关 `.env`（已 gitignore），浏览器仅持网关令牌，接触不到上游 key |
-| ③ 输出对账 | `lib/reconcile.mjs` + `lib/proxy.mjs` proxyQa | **PRD §7.3 原文形态**："AI 回答出现数字但过程中没有引擎调用记录，判定为模型编造，拒收并退回本地引擎出数"。只判流程完整性（引擎是否参与），不比对数字内容——无常量白名单、无逐位比对、无打回重算。回答实时透传；利润/推演类问题网关代调引擎并注入 `run_scenario` 调用记录 |
-| ④ 审计 | `server.mjs` audit() | 登录/问答/两类拦截全部落 `logs/gateway-audit.jsonl`（一行一 JSON） |
+| ① 认证 + 角色调度 | `lib/auth.mjs` + `lib/rbac.mjs` + `server.mjs` handleQa | demo 登录签发 HMAC 令牌；智能体白名单（内置按 ID，自定义按名称关键词匹配，白名单外 403）；未指定则按角色默认（优先名称解析「利润推演智能体」，回退内置默认）；知识库按角色关键词过滤；无利润权限的角色问利润直接 403 |
+| ② 凭据持有 | `.env` + `lib/proxy.mjs` | WeKnora scoped key 只在网关 `.env`（已 gitignore），浏览器仅持网关令牌；引擎 MCP 有独立 X-API-Key 自鉴权（AD-08「MCP 自鉴权」） |
+| ③ 输出对账 | `lib/reconcile.mjs` + `lib/proxy.mjs` proxyQa | **PRD §7.3 原文形态 + AD-09 已生效**："AI 回答出现数字但过程中没有引擎调用记录，判定为模型编造，拒收并退回本地引擎出数"。引擎调用记录 = 上游真实 `tool_call` 事件且工具名命中引擎工具（`run_scenario/get_baseline/get_current_status/list_presets`，含 `mcp_<service>_` 前缀）——KB 工具（如 knowledge_search）不算引擎参与。只判流程完整性，不比对数字内容；回答实时透传，网关不代调不注入 |
+| ④ 审计 | `server.mjs` audit() | 登录/问答/两类拦截全部落 `logs/gateway-audit.jsonl`（一行一 JSON，含命中的引擎工具名列表） |
 
 对账裁决（`response_type: gateway_audit` 事件回写前端）：
 
 | verdict | 触发条件 | 前端表现 |
 |---------|----------|----------|
-| `pass` | 回答含数字且引擎已参与（流程对账通过） | 绿色"引擎已参与"提示 |
-| `reject` | 回答含数字但引擎未参与（含 `GATEWAY_ENGINE_DISABLED=1` 时模型自算） | 拒收提示 + 回写引擎兜底答案 |
+| `pass` | 回答含数字 ∧ 上游调用了引擎工具 | 绿色"推演引擎已参与本次回答（流程对账通过）" |
+| `reject` | 回答含数字 ∧ 引擎未参与（引擎 MCP 停机/模型未调工具） | 拒收提示 + 回写引擎兜底答案 |
 | `na` | 非利润问题 / 未识别地块 / 回答无数字 | 无事件（仅审计） |
 
-明确取舍：引擎参与后模型若改数，运行时不拦——内容正确性由 M1 评测脚本（20 题逐位比对）与 M3 引擎 MCP 工具绑定把关；利润意图识别靠关键词正则，漏判可能误拒（demo 题面可控）。
-
-## 快速开始
-
-```bash
-# 1. 配置：复制 .env.example 为 .env，填入 WEKNORA_API_KEY（WeKnora WebUI → 密钥管理）
-# 2. 启动 WeKnora（docker-compose）→ 启动本网关 → 启动前端
-node server.mjs          # 或 start-gateway.bat
-cd ../huangpu-react && npm run dev   # vite 已把 /api/v1 与 /api/auth 代理到 :8090
-```
-
-演示账号（demo 值，`lib/auth.mjs`）：
-
-| 账号 | 密码 | 角色 | 利润权限 |
-|------|------|------|----------|
-| ai | ai123 | 指挥部-商务部 | 有 |
-| wang | wang123 | 指挥部-财务部 | 有 |
-| ning | ning123 | 股份领导/指挥长 | 有（低权限智能体） |
-| cao | cao123 | 指挥部-工程技术部 | 有（低权限智能体） |
-| wu | wu123 | 指挥部-外协部 | 有（低权限智能体） |
-| xiong | xiong123 | 安全员 | **无（问利润 403）** |
-| admin | admin123 | 全权限测试账号 | 有 |
+明确取舍：引擎参与后模型若改数，运行时不拦——内容正确性由 M1 评测脚本（20 题逐位比对）把关（引擎 MCP 绑定已生效，本项防线前置到位）；利润意图识别仍靠关键词正则（决定 403/兜底触发），误判后果仅为横幅噪音，不影响回答透传（demo 题面可控）。
 
 ## 演示脚本（验收五条）
 
-1. **闭环**：`ai` 登录问"新联01钢筋涨8%利润率多少" → 界面出现"调用推演引擎 run_scenario"工具事件 → 回答数字与引擎逐位一致 → 绿色对账通过。
-2. **越权**：`xiong` 登录问同一句 → 403"角色「安全员」无利润数据权限"。
-3. **数值铁律**：`.env` 设 `GATEWAY_ENGINE_DISABLED=1` 重启网关 → 同一问题模型自算数字 → 网关判"编造"拒收 → 界面展示引擎兜底答案。
+1. **闭环（真实工具调用）**：`ai` 登录（默认已选中「利润推演智能体」）问"新联01钢筋涨8%利润率多少" → 界面出现真实的 `mcp_profit-engine_run_scenario` 工具调用卡片 → 回答 19.59% → 18.46%（引擎逐位数值）→ 绿色对账通过。
+2. **越权**：`xiong` 登录问同一句 → 403"角色「安全员」无利润数据权限"；其智能体列表中也看不到「利润推演智能体」。
+3. **数值铁律（真实故障演练）**：停掉 engine-mcp 进程（`Ctrl+C`）→ 同一问题模型无引擎工具可用、仅翻知识库自算 → 网关判"无引擎调用记录"拒收 → 界面红横幅 + 引擎兜底答案。（替代已删除的 `GATEWAY_ENGINE_DISABLED` 假开关，更真实。）
 4. **降级**：关掉网关 → 前端自动回落本地规则引擎（既有链路，无新增代码）。
-5. **留痕**：`logs/gateway-audit.jsonl` 有全部 login/deny/chat 裁决记录。
+5. **留痕**：`logs/gateway-audit.jsonl` 有全部 login/deny/chat 裁决记录（chat 含 `engine_tool_called` 工具名列表）。
 
 ## 测试
 
 ```bash
-node test/smoke.mjs   # 自起 mock 上游 + 网关，14 项断言（登录/401/403/注入/pass/mismatch/reject/KB过滤/审计）
+node test/smoke.mjs      # mock 上游 + 网关，19 项断言（含 knowledge_search 不算引擎参与的回归锁）
+node test/agent-probe.mjs [agentId] [query]   # 直连 WeKnora 观察 Agent 真实工具调用
+node test/e2e-real.mjs   # 真链路（需 WeKnora + engine-mcp + 网关在线）：pass 链验证 + 首字延迟实测
 ```
+
+## WeKnora 侧配置（API 完成，零代码改动）
+
+- MCP 服务：`POST /api/v1/mcp-services` 注册 `profit-engine`（http-streamable，`http://host.docker.internal:18095/mcp`，auth api_key）；需 `SSRF_WHITELIST_EXTRA` 放行 host.docker.internal、容器 `NO_PROXY` 放行（均已在 weknora-local/.env 配置）。
+- 智能体：「利润推演智能体」（`agent_mode: smart-reasoning`，绑定成本利润/项目文档 KB，`mcp_selection_mode: selected`，max_iterations 10）。
+- ⚠️ demo 依赖 MCP 服务与网关两侧进程在线；WeKnora 重建库后 MCP 服务/智能体需重新注册（网关按名称关键词匹配，ID 漂移无影响）。
 
 ## demo 简化声明与生产化遗留
 
-- 引擎为网关**内置模块**，非独立 MCP 服务（M3 拆分：MCP 化 + WeKnora agent 挂接，届时对账工具调用来自上游 tool_call 而非网关注入）。
+- 引擎算法单源：`lib/engine.mjs` 同时供网关兜底与 engine-mcp 使用；前端本地引擎 `decision-engine.ts`、沙盘 `decision-engine.js` 为同步拷贝（头注有同步声明）。
+- `GATEWAY_ENGINE_DISABLED` 假开关已删除——拒收路径由真实引擎停机触发。
 - 无 HTTPS / 数据库 / 限流；令牌为 HMAC 签名（无刷新机制，12h 过期）。
-- 引擎数据 `lib/engine-data.mjs` 与 `huangpu-react/src/data` 同源复制（头注有同步声明），M3 接真实台账时整体替换。
+- 引擎数据 `lib/engine-data.mjs` 与 `huangpu-react/src/data` 同源复制（头注有同步声明），接真实台账时整体替换。
 - 审计为本地 JSONL，生产需入库（PRD §7.3 审计设计）。
 - 角色→权限白名单在网关 `lib/rbac.mjs` 与前端 `src/config/rbac.ts` 各有一份（前者是强制源，后者仅界面过滤），两处需同步维护。
+- 阶段 B 待办：引擎 Python FastMCP 移植（PRD M1.1 正式交付）+ 五情景逐位校验脚本，完成后 WeKnora 里换 MCP 注册 URL 即切换。

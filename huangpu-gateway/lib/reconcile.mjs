@@ -2,13 +2,14 @@
  * 输出对账（PRD §7.3 职责③原文形态）：
  * "AI 回答出现数字但过程中没有引擎调用记录，判定为模型编造，拒收并退回本地引擎出数。"
  *
- * 对账只判流程完整性——推演引擎是否参与本次回答；不比对数字内容。
- * 内容正确性由 M1 评测脚本（20 题逐位比对）与 M3 引擎 MCP 工具绑定把关，
- * 因此这里没有任何常量白名单、没有逐位比对、没有打回重算。
+ * 对账只判流程完整性——本次回答的上游流里是否出现过真实的引擎工具调用
+ * （AD-09：引擎 MCP 化后，工具由 Agent 模型自主调用，调用记录来自上游 tool_call
+ * 事件而非网关注入）；不比对数字内容。内容正确性由 M1 评测脚本（20 题逐位比对）
+ * 把关，因此这里没有任何常量白名单、没有逐位比对、没有打回重算。
  *
  * 裁决三值：
- *   pass   回答含数字且引擎已参与（流程对账通过）
- *   reject 回答含数字但引擎未参与（如 GATEWAY_ENGINE_DISABLED=1 时模型自算）→ 拒收 + 引擎兜底答案
+ *   pass   回答含数字且上游调用了引擎工具（流程对账通过）
+ *   reject 回答含数字但引擎未参与（引擎 MCP 服务故障/模型未调工具）→ 拒收 + 引擎兜底答案
  *   na     非利润问题 / 未识别地块 / 回答无数字，不做对账
  */
 
@@ -19,6 +20,9 @@ const STEEL_RE = /钢筋[涨跌升降]?\s*(\d+(?:\.\d+)?)\s*%/;
 const DELAY_RE = /延误\s*(\d+)\s*天/;
 const PAYMENT_RE = /回款延迟\s*(\d+)\s*天/;
 const PROFIT_WORDS_RE = /利润|红线|现金流|推演|挣值|回款|成本|CPI|SPI/;
+
+/** 引擎工具名判据：WeKnora 对 MCP 工具加 mcp_<service>_ 前缀，裸名/带前缀均命中 */
+export const ENGINE_TOOL_RE = /run_scenario|get_baseline|get_current_status|list_presets/;
 
 export function findProject(q) {
   return PROJECTS.find((p) => q.includes(p.shortName) || q.includes(p.name.replace('地块', ''))) ?? null;
@@ -53,14 +57,14 @@ export function hasNumbers(text) {
 /**
  * 流程对账裁决。
  * @param engine engineForQuery 的返回
- * @param engineCalled 网关本次是否实际把引擎结果注入了对话（GATEWAY_ENGINE_DISABLED=1 时为 false）
+ * @param engineToolCalled 上游流中是否出现过引擎工具的真实 tool_call（按工具名判定）
  * @returns {{verdict:'pass'|'reject'|'na', reason:string}}
  */
-export function reconcile({ answerText, engine, engineCalled }) {
+export function reconcile({ answerText, engine, engineToolCalled }) {
   if (!engine.isProfit) return { verdict: 'na', reason: 'not_profit' };
   if (!engine.project) return { verdict: 'na', reason: 'no_project' };
   if (!hasNumbers(answerText)) return { verdict: 'na', reason: 'no_numbers' };
-  if (engineCalled) return { verdict: 'pass', reason: 'engine_involved' };
+  if (engineToolCalled) return { verdict: 'pass', reason: 'engine_involved' };
   return { verdict: 'reject', reason: 'numbers_without_engine_call' };
 }
 

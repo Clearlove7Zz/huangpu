@@ -1,16 +1,18 @@
 /**
  * 黄埔城更数字沙盘 · demo 后端网关
  *
- * 职责（PRD §7.3，demo 最小闭环）：
- *   ① 认证 + 角色调度：demo 登录签发 HMAC 令牌；按角色强制智能体白名单与知识库范围；
- *      无利润权限的角色问利润直接 403。
+ * 职责（PRD §7.3）：
+ *   ① 认证 + 角色调度：demo 登录签发 HMAC 令牌；按角色强制智能体白名单（含按名称
+ *      匹配的自定义智能体）与知识库范围；无利润权限的角色问利润直接 403。
  *   ② 凭据持有：WeKnora scoped API key 只存在本服务 .env，浏览器仅持网关令牌。
- *   ③ 输出对账：旁路监听回答流，数字必须出自推演引擎（engine.mjs）或常量白名单，
- *      否则判编造拒收并回写引擎兜底答案。
+ *   ③ 输出对账（PRD 原文形态 + AD-09）：旁路监听回答流，"有数字但过程中没有引擎
+ *      调用记录 = 编造，拒收并退回本地引擎出数"。引擎调用记录 = 上游真实 tool_call
+ *      事件且工具名命中引擎工具（引擎已 MCP 化，由 Agent 模型自主调用，见 engine-mcp/）。
+ *      网关保留 engine.mjs 仅作拒收兜底出数，不再代调注入。
  *   ④ 审计：全部拦截/裁决落 logs/gateway-audit.jsonl。
  *
- * 零 npm 依赖，Node ≥18，启动：node server.mjs
- * demo 简化：引擎为网关内置模块（非独立 MCP 服务，M3 拆分）；无 HTTPS/数据库/限流。
+ * 零 npm 依赖，Node ≥18，启动：node server.mjs（引擎 MCP 服务另启：node engine-mcp/server.mjs）
+ * demo 简化：无 HTTPS/数据库/限流。
  */
 
 import http from 'node:http';
@@ -18,8 +20,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { login, verifyToken, tokenFromRequest } from './lib/auth.mjs';
-import { getRbac } from './lib/rbac.mjs';
-import { engineForQuery, reconcile, formatEngineAnswer } from './lib/reconcile.mjs';
+import { getRbac, agentAllowed, PROFIT_AGENT_NAME } from './lib/rbac.mjs';
+import { engineForQuery, reconcile, formatEngineAnswer, ENGINE_TOOL_RE } from './lib/reconcile.mjs';
 import { applyCors, sendJson, readBody, proxyPassthrough, proxyQa, sseEvent, upstreamJson } from './lib/proxy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,7 +38,7 @@ if (fs.existsSync(envPath)) {
 const PORT = Number(process.env.PORT || 8090);
 const WEKNORA_URL = process.env.WEKNORA_URL || 'http://127.0.0.1:8080';
 const WEKNORA_API_KEY = process.env.WEKNORA_API_KEY || '';
-const ENGINE_DISABLED = process.env.GATEWAY_ENGINE_DISABLED === '1';
+const ENGINE_MCP_URL = process.env.ENGINE_MCP_URL || 'http://127.0.0.1:18095/mcp';
 const wUrl = new URL(WEKNORA_URL);
 const TARGET = {
   host: wUrl.hostname,
@@ -71,6 +73,19 @@ async function getKbNameMap() {
   return kbCache.map; // 上游失败沿用旧缓存
 }
 
+// —— 智能体 ID→{name} 映射缓存（名称匹配越权判定与默认智能体解析用，5 分钟刷新） ——
+let agentCache = { at: 0, map: null };
+async function getAgentsMap() {
+  if (agentCache.map && Date.now() - agentCache.at < 5 * 60 * 1000) return agentCache.map;
+  const j = await upstreamJson(TARGET, 'GET', '/api/v1/agents');
+  if (j && Array.isArray(j.data)) {
+    const map = {};
+    for (const a of j.data) map[String(a.id)] = { name: String(a.name ?? '') };
+    agentCache = { at: Date.now(), map };
+  }
+  return agentCache.map; // 上游失败沿用旧缓存
+}
+
 // —— 问答管线 ——
 async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) {
   let body = {};
@@ -91,14 +106,23 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
   }
 
   // ② 角色调度：智能体白名单（WeKnora API key 只能限知识库、限不了智能体，源码
-  //    tenant_api_key.go 核实，故须网关强制；白名单外 403，未指定则注入角色默认）
+  //    tenant_api_key.go 核实，故须网关强制）。自定义智能体按名称关键词匹配（ID 随
+  //    库重建漂移）；白名单外 403，未指定则按角色默认（优先名称解析，回退内置默认）。
   if (qaPath.startsWith('/api/v1/agent-chat/')) {
-    if (body.agent_id && !scope.agentIds.includes(String(body.agent_id))) {
-      audit({ action: 'deny_agent', user: payload.name, role: payload.role, agent_id: body.agent_id, query });
-      sendJson(clientRes, 403, { error: `网关拦截：角色「${payload.role}」不可使用智能体 ${body.agent_id}` });
-      return;
+    const agents = await getAgentsMap();
+    if (body.agent_id) {
+      const agentName = agents?.[String(body.agent_id)]?.name ?? '';
+      if (!agentAllowed(scope, String(body.agent_id), agentName)) {
+        audit({ action: 'deny_agent', user: payload.name, role: payload.role, agent_id: body.agent_id, query });
+        sendJson(clientRes, 403, { error: `网关拦截：角色「${payload.role}」不可使用智能体 ${agentName || body.agent_id}` });
+        return;
+      }
+    } else {
+      const resolved = scope.defaultAgentName && agents
+        ? Object.entries(agents).find(([, v]) => v.name === scope.defaultAgentName)?.[0]
+        : null;
+      body.agent_id = resolved ?? scope.defaultAgentId;
     }
-    if (!body.agent_id) body.agent_id = scope.defaultAgentId;
   }
 
   // ③ 知识库白名单：按角色关键词过滤请求体中的 knowledge_base_ids
@@ -112,29 +136,24 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
     }
   }
 
-  // ④ 引擎代调：利润/推演类问题先把引擎结果作为 tool_call/tool_result 注入流
-  //    （GATEWAY_ENGINE_DISABLED=1 时跳过，用于演示"AI 自算 → 网关拒收"路径）
-  const engineCalled = !ENGINE_DISABLED && engine.isProfit && Boolean(engine.project);
-  const injected = [];
-  if (engineCalled) injected.push(buildToolEvents(engine));
-
-  // ⑤ 转发 + SSE 旁路监听 + 流结束后流程对账（PRD §7.3 原文形态：
+  // ④ 转发 + SSE 旁路监听 + 流结束后流程对账（PRD §7.3 原文形态 + AD-09：
+  //    引擎调用记录 = 上游真实 tool_call 且工具名命中引擎工具；网关不代调不注入。
   //    "有数字但无引擎调用记录 = 编造，拒收并退回引擎出数"；不比对数字内容）
   proxyQa({
     clientRes,
     target: TARGET,
     path: qaPath,
     bodyStr: JSON.stringify(body),
-    injectedEvents: injected,
     onComplete: async ({ tap }) => {
-      const verdict = reconcile({ answerText: tap.answerText, engine, engineCalled });
+      const engineTools = (tap.toolNames ?? []).filter((n) => ENGINE_TOOL_RE.test(n));
+      const verdict = reconcile({ answerText: tap.answerText, engine, engineToolCalled: engineTools.length > 0 });
       audit({
         action: 'chat',
         user: payload.name,
         role: payload.role,
         query,
         endpoint: qaPath.replace('/api/v1/', ''),
-        engine_called: engineCalled,
+        engine_tool_called: engineTools,
         upstream_tool_call: tap.sawToolCall,
         has_numbers: verdict.verdict !== 'na',
         verdict: verdict.verdict,
@@ -163,38 +182,6 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
   });
 }
 
-/** 引擎代调事件：前端 rag.ts 已支持 tool_call/tool_result 渲染 */
-function buildToolEvents(engine) {
-  const id = `gw-engine-${Date.now()}`;
-  const factors = Object.fromEntries(Object.entries(engine.factorsUsed).filter(([, v]) => v !== 0));
-  return (
-    sseEvent({
-      id,
-      response_type: 'tool_call',
-      data: { tool_call_id: id, tool_name: 'run_scenario', arguments: { project: engine.project.shortName, factors } },
-    }) +
-    sseEvent({
-      id,
-      response_type: 'tool_result',
-      data: {
-        tool_call_id: id,
-        tool_name: 'run_scenario',
-        success: true,
-        duration_ms: 1,
-        output: `利润率 ${engine.sim.simulated.profitRate}%（基线 ${engine.sim.baseline.profitRate}%，红线 16.66%）`,
-        engine: {
-          baseline: engine.sim.baseline.profitRate,
-          profitRate: engine.sim.simulated.profitRate,
-          delta: engine.sim.deltas.profitRate,
-          belowRedLine: engine.sim.belowRedLine,
-          criticalCashflow: engine.sim.criticalCashflow,
-          breakdown: engine.sim.breakdown,
-        },
-      },
-    })
-  );
-}
-
 const server = http.createServer(async (req, res) => {
   applyCors(req, res);
   if (req.method === 'OPTIONS') {
@@ -212,7 +199,7 @@ const server = http.createServer(async (req, res) => {
   const p = u.pathname;
 
   if (p === '/health') {
-    sendJson(res, 200, { ok: true, service: 'huangpu-gateway', upstream: WEKNORA_URL, engineDisabled: ENGINE_DISABLED });
+    sendJson(res, 200, { ok: true, service: 'huangpu-gateway', upstream: WEKNORA_URL, engineMcp: ENGINE_MCP_URL });
     return;
   }
 
@@ -267,6 +254,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[gateway] 黄埔城更 demo 网关已启动 http://127.0.0.1:${PORT}`);
-  console.log(`[gateway] 上游 WeKnora: ${WEKNORA_URL} ｜ 引擎代调: ${ENGINE_DISABLED ? '已禁用（演示拒收路径）' : '启用'}`);
+  console.log(`[gateway] 上游 WeKnora: ${WEKNORA_URL} ｜ 引擎 MCP: ${ENGINE_MCP_URL}（对账依据上游引擎工具 tool_call）`);
+  console.log(`[gateway] 默认利润智能体: ${PROFIT_AGENT_NAME}`);
   console.log('[gateway] 审计日志: logs/gateway-audit.jsonl');
 });

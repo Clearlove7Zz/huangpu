@@ -111,17 +111,19 @@ function feedBlock(block, tap) {
     tap.answerText += payload.content;
   } else if (payload.response_type === 'tool_call') {
     tap.sawToolCall = true;
+    const name = payload.data?.tool_name;
+    if (name) tap.toolNames.push(String(name));
   }
 }
 
 /**
  * 问答代理（POST /api/v1/knowledge-chat|agent-chat/:sid）——透明转发 + 流程对账。
- * 回答实时透传（引擎参与的正常路径不会事后拒收）；流结束后由 onComplete 依据
- * "有数字 ∧ 引擎未参与" 做流程裁决（PRD §7.3 职责③），追加裁决事件后收尾。
- * @param injectedEvents 首轮预注入事件（网关引擎 tool_call/tool_result 调用记录）
+ * 回答实时透传；流结束后由 onComplete 依据"有数字 ∧ 上游无引擎工具调用"做流程
+ * 裁决（PRD §7.3 职责③ + AD-09），追加裁决事件后收尾。tap.toolNames 记录上游
+ * 全部 tool_call 工具名（对账按引擎工具名匹配，避免把 knowledge_search 误当引擎）。
  * @param onComplete 流结束回调：入参 {tap}，返回 {appendEvents}
  */
-export function proxyQa({ clientRes, target, path, bodyStr, injectedEvents, onComplete }) {
+export function proxyQa({ clientRes, target, path, bodyStr, onComplete }) {
   const up = http.request(upstreamOptions(target, 'POST', path, { 'Content-Type': 'application/json', Accept: 'text/event-stream' }), (upRes) => {
     const ct = String(upRes.headers['content-type'] ?? '');
     if (!ct.includes('text/event-stream')) {
@@ -140,9 +142,8 @@ export function proxyQa({ clientRes, target, path, bodyStr, injectedEvents, onCo
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
-    for (const ev of injectedEvents) clientRes.write(ev);
 
-    const tap = { answerText: '', sawToolCall: false, leftover: '' };
+    const tap = { answerText: '', sawToolCall: false, toolNames: [], leftover: '' };
     const dec = new TextDecoder('utf-8');
     const feed = (raw) => {
       tap.leftover += raw;

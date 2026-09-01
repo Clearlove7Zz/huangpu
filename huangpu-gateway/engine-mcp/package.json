@@ -1,0 +1,14 @@
+{
+  "name": "hp-engine-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "黄埔城更利润推演引擎 MCP 服务（AD-09：引擎走 MCP 工具，Agent 按需调用；算法单源 import 网关 lib/engine.mjs）",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.25.0"
+  }
+}

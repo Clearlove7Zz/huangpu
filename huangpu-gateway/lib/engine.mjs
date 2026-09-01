@@ -157,6 +157,82 @@ export function simulate(project, factors) {
   };
 }
 
+export const SIM_TYPES = [
+  { id: 'overall', label: '整体推演', methodDesc: '经典挣值推演图（PV/EV/AC + EAC 预测 + 管理储备），联动动态现金流推演，综合评估项目健康度' },
+  { id: 'schedule', label: '进度推演', methodDesc: '项目进度网络图展示活动逻辑关系，关键路径与扰动后工期可视化' },
+  { id: 'cost', label: '成本推演', methodDesc: '成本 S 曲线（累计 PV/EV/AC），对比现状与扰动推演轨迹' },
+];
+
+export const PRESETS = [
+  { id: 'baseline', label: '当前基准', values: {} },
+  { id: 'steel_up', label: '钢筋涨价8%', values: { steelPrice: 8 } },
+  { id: 'delay_30', label: '主体延误30天', values: { progressDelay: 30 } },
+  { id: 'payment_late', label: '回款延迟30天', values: { paymentDelay: 30 } },
+  { id: 'combo_risk', label: '复合风险情景', values: { steelPrice: 5, progressDelay: 20, subcontractDelta: 80, paymentDelay: 15 } },
+];
+
+function metricItem(label, value, abnormal) {
+  return { label, value, status: abnormal ? 'warn' : 'ok', stateLabel: abnormal ? '异常' : '正常' };
+}
+
+/** 移植自 TS 版 getCurrentStatusByType（decision-engine.ts:336-398），条件与文案逐行一致 */
+export function getCurrentStatusByType(project, simType) {
+  const ev = calcEarnedValue(project, {});
+  const costSurplus = +(project.cost.targetCost - project.cost.actualCost).toFixed(2);
+  let items = [];
+  let suggestions = [];
+
+  if (simType === 'schedule') {
+    const lag = project.lagNodes > 0;
+    const spiBad = ev.spi < 0.98;
+    const svBad = ev.sv < 0;
+    items = [
+      metricItem('整体进度完成率', `${project.progress}%`, lag || project.progress < 30),
+      metricItem('进度绩效 SPI', String(ev.spi), spiBad),
+      metricItem('进度偏差 SV', `${ev.sv >= 0 ? '+' : ''}${ev.sv} 万`, svBad),
+      metricItem('滞后里程碑', `${project.lagNodes} 个`, lag),
+      metricItem('关键路径状态', lag ? '存在滞后节点' : '暂无新增延误', lag),
+    ];
+    if (lag) suggestions.push({ type: 'warn', title: '里程碑滞后', text: `当前 ${project.lagNodes} 个节点滞后，建议对照 WBS/甘特图锁定关键路径活动，编制赶工或工序穿插方案。` });
+    if (spiBad) suggestions.push({ type: 'warn', title: 'SPI 低于 1', text: `SPI=${ev.spi}，实际完成价值低于计划，建议周报跟踪产值确认与证照节点。` });
+    if (svBad) suggestions.push({ type: 'action', title: '进度偏差 SV 为负', text: `SV=${ev.sv} 万，优先协调资源投入关键线路，避免非关键线路占用班组。` });
+    if (!lag && !spiBad && !svBad) suggestions.push({ type: 'ok', title: '进度指标正常', text: '进度绩效在计划范围内，维持现有节拍并关注下月里程碑。' });
+  } else if (simType === 'cost') {
+    const cpiBad = ev.cpi < 1;
+    const vacBad = ev.vac < 0;
+    const profitBad = project.profitRate < PROFIT_RED_LINE;
+    const overrun = costSurplus <= 0;
+    items = [
+      metricItem('成本绩效 CPI', String(ev.cpi), cpiBad),
+      metricItem('目标成本结余', `${costSurplus > 0 ? '+' : ''}${costSurplus.toFixed(2)} 亿`, overrun),
+      metricItem('实际利润率', `${project.profitRate}%`, profitBad),
+      metricItem('完工估算 EAC', `${(ev.eac / 10000).toFixed(2)} 亿`, vacBad),
+      metricItem('完工偏差 VAC', `${ev.vac >= 0 ? '+' : ''}${ev.vac} 万`, vacBad),
+    ];
+    if (profitBad) suggestions.push({ type: 'danger', title: '利润率低于红线', text: `当前 ${project.profitRate}% < 红线 ${PROFIT_RED_LINE}%，48 小时内启动三算对比，锁定 ${(project.cost.topOverruns || []).join('、') || '超支分项'}。` });
+    if (cpiBad) suggestions.push({ type: 'warn', title: 'CPI 低于 1', text: `CPI=${ev.cpi}，实际成本高于挣值，建议复核分包签证与钢筋/混凝土采购价。` });
+    if (vacBad) suggestions.push({ type: 'action', title: '预测完工超支', text: `VAC=${ev.vac} 万，滚动修订目标成本并对外协变更实行限额审批。` });
+    if (costSurplus > 0 && !cpiBad) suggestions.push({ type: 'opportunity', title: '成本有结余空间', text: `结余约 ${costSurplus.toFixed(2)} 亿，可设立风险储备，避免无依据扩大分包范围。` });
+    if (!suggestions.length) suggestions.push({ type: 'ok', title: '成本指标正常', text: '成本绩效可控，继续按周更新目标成本滚动表。' });
+  } else {
+    const lag = project.lagNodes > 0 || ev.spi < 0.98;
+    const costIssue = ev.cpi < 1 || project.profitRate < PROFIT_RED_LINE;
+    const cfIssue = CASHFLOW_JUN < CRITICAL_BALANCE;
+    items = [
+      metricItem('整体进度', `${project.progress}%`, lag),
+      metricItem('实际利润率', `${project.profitRate}%`, project.profitRate < PROFIT_RED_LINE),
+      metricItem('SPI / CPI', `${ev.spi} / ${ev.cpi}`, ev.spi < 1 || ev.cpi < 1),
+      metricItem('6月现金流结余', `${CASHFLOW_JUN} 万`, cfIssue),
+      metricItem('滞后节点', `${project.lagNodes} 个`, project.lagNodes > 0),
+    ];
+    if (costIssue) suggestions.push({ type: 'warn', title: '成本与利润需关注', text: '利润率或 CPI 偏离目标，建议切换「成本推演」查看 EAC/VAC 并联动商务测算。' });
+    if (lag) suggestions.push({ type: 'warn', title: '进度需关注', text: '存在滞后节点或 SPI 偏低，建议切换「进度推演」查看 SV 与关键路径。' });
+    if (cfIssue) suggestions.push({ type: 'danger', title: '现金流逼近临界', text: `6 月结余 ${CASHFLOW_JUN} 万，低于临界 ${CRITICAL_BALANCE} 万，财务部协同外协推进回款。` });
+    if (!costIssue && !lag && !cfIssue) suggestions.push({ type: 'ok', title: '整体态势平稳', text: '进度、成本、现金流均在可控区间，维持周度例会跟踪。' });
+  }
+  return { items, suggestions, ev, simType };
+}
+
 export function calcEarnedValue(project, factors) {
   const progress = project.progress / 100;
   const bac = +(project.cost.targetCost * 10000).toFixed(0);
