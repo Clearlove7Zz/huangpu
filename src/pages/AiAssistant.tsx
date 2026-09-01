@@ -4,7 +4,7 @@ import { DeleteOutlined, MessageOutlined, PaperClipOutlined, PlusOutlined, SendO
 import { abortCurrentChat, chatWithRag } from '../services/chat-service';
 import { ragReady } from '../config/rag-config';
 import { listAgents, listKnowledgeBases } from '../services/kb-service';
-import { filterAgentsByRole, filterKbsByRole, getRbac } from '../config/rbac';
+import { filterAgentsByRole, filterKbsByRole, resolveDefaultAgent } from '../config/rbac';
 import { useAuth } from '../auth';
 import type { ThinkingOrbState } from '../components/ThinkingOrb';
 import AgentPicker from '../components/AgentPicker';
@@ -149,7 +149,7 @@ const active = sessions.find((session) => session.id === activeSessionId)
       setAvailableKbs(allowedKbs);
       setAvailableAgents(allowedAgents);
       setSelectedKbIds(allowedKbs.map((kb) => kb.id));
-      setSelectedAgentId(getRbac(role).defaultAgentId);
+      setSelectedAgentId(resolveDefaultAgent(role, allowedAgents));
     }).catch(() => undefined);
   }, [user?.role]);
 
