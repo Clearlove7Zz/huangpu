@@ -66,7 +66,9 @@ server.registerTool(
     title: '利润情景推演',
     description:
       '对指定地块执行确定性利润推演（数值铁律：利润数字必须由本引擎计算，模型不得自行推算）。' +
-      `可选地块：${projectHint()}。返回基线与推演后的利润率、现金流、进度及扰动明细。`,
+      `可选地块：${projectHint()}。返回基线与推演后的利润率、现金流、进度及扰动明细。` +
+      '基线数据（利润率/成本/合同价/份额）由引擎内置维护并随台账期次更新，调用前无需检索知识库获取基线数值；' +
+      '本工具只接收问题中的情景扰动因子（如钢筋涨价 X%、延误 X 天），未提到的因子保持 0。',
     inputSchema: {
       project: z.string().describe(`地块 ID 或名称，如：${projectHint()}`),
       ...factorShape,
@@ -85,7 +87,7 @@ server.registerTool(
     title: '地块基线指标',
     description:
       `获取指定地块当前基线（实际利润率、中标合同价、目标成本、回款率等）。可选地块：${projectHint()}。` +
-      `目标利润率红线 ${PROFIT_RED_LINE}%。`,
+      `目标利润率红线 ${PROFIT_RED_LINE}%。需要基线数值时优先调用本工具，而非检索知识库（引擎数值随台账期次更新，最权威）。`,
     inputSchema: { project: z.string().describe(`地块 ID 或名称，如：${projectHint()}`) },
   },
   async (args) => {
