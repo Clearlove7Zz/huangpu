@@ -460,6 +460,20 @@ body,
 .md-h3 { margin: 14px 0 8px; font-size: 15px; font-weight: 600; color: #1f2328; }
 .md-h4 { margin: 12px 0 6px; font-size: 14px; font-weight: 600; color: #1f2328; }
 .md-p { margin: 8px 0; }
+
+/* ===== KaTeX 公式排版保护（对齐 WeKnora 渲染效果） =====
+   防止全局 line-height 1.85 与 .ai-message-content 的 word-break 穿透
+   KaTeX 内部排版导致分式穿线/断裂 */
+.md-body .katex { line-height: 1.2; }
+.md-body .katex * { word-break: normal; overflow-wrap: normal; }
+.md-body .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 6px;
+}
+.md-body .katex-display > .katex { white-space: nowrap; display: inline-block; }
+.md-body .katex-display > .katex > .katex-html { display: block; text-align: center; }
 .md-ul, .md-ol { margin: 8px 0; padding-left: 22px; }
 .md-li { margin: 4px 0; }
 .md-li::marker { color: #1f2328; }

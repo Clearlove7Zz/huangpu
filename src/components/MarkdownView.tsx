@@ -63,7 +63,34 @@ function preprocess(src: string): string {
   if (mathCount % 2 === 1) {
     s += ' $$';
   }
+  // WeKnora marked-katex nonStandard 行为对齐：行内混排的 $$...$$ 摘成独立
+  // 显示块（displayMode），否则 remark-math 会按行内公式渲染压缩分式，
+  // 在 1.85 行高下分式会穿过分线
+  s = blockifyDisplayMath(s);
   return s;
+}
+
+/** 把与文字混排的 $$...$$ 摘成独立显示块（跳过代码块内容） */
+function blockifyDisplayMath(src: string): string {
+  // 按代码块切分（捕获组：偶数索引为普通文本），流式未闭合代码块也算
+  const parts = src.split(/(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/g);
+  for (let i = 0; i < parts.length; i += 2) {
+    const lines = parts[i].split('\n');
+    const out: string[] = [];
+    for (const line of lines) {
+      const m = line.match(/^(.*?)\$\$([^$]+)\$\$(.*)$/);
+      if (m && (m[1].trim() || m[3].trim())) {
+        const [, before, inner, after] = m;
+        if (before.trim()) out.push(before);
+        out.push('', `$$${inner}$$`, '');
+        if (after.trim()) out.push(after);
+      } else {
+        out.push(line);
+      }
+    }
+    parts[i] = out.join('\n');
+  }
+  return parts.join('');
 }
 
 const components = {
