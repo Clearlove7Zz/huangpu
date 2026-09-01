@@ -67,6 +67,33 @@ export interface InspectResult {
   original_url: string;
 }
 
+/**
+ * 页面展示视图：AI 识别即时返回（InspectResult，含 record_id/summary）与已入库记录
+ * （InspectionRecord，扁平字段）的字段并集，共有字段必填、各自独有字段可选。
+ * SafetyLog 的 lastResult 两种来源都可能，展示层用 ?? 链兼容。
+ */
+export type InspectionView = Pick<
+  InspectionRecord,
+  'project' | 'area' | 'inspector' | 'check_date' | 'created_at' | 'hazards' | 'annotated_url' | 'original_url'
+> &
+  Partial<Pick<InspectResult, 'record_id' | 'summary' | 'detections'>> &
+  Partial<
+    Pick<
+      InspectionRecord,
+      | 'id'
+      | 'person_count'
+      | 'hazard_count'
+      | 'highest_level'
+      | 'hazard_situation'
+      | 'suggestion'
+      | 'rectify_person'
+      | 'rectify_time'
+      | 'recheck_plan'
+      | 'recheck_status'
+      | 'written_to_log'
+    >
+  >;
+
 function apiUrl(path: string): string {
   return SAFETY_AI_API.replace(/\/$/, '') + path;
 }

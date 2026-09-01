@@ -34,8 +34,6 @@ interface MaterialSupplier {
   remark: string;
 }
 
-type SupplierRow = LaborSupplier | MaterialSupplier;
-
 const laborData = SUPPLIER_DATA.labor as LaborSupplier[];
 const materialData = SUPPLIER_DATA.material as MaterialSupplier[];
 

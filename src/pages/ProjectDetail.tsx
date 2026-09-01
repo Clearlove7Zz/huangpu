@@ -54,7 +54,8 @@ export default function ProjectDetail() {
   }[];
   const [projectId, setProjectId] = useState(projects[0].id);
   const [lightbox, setLightbox] = useState<{ src: string; caption: string; group: AerialPhotoGroup; photo: string } | null>(null);
-  const details = MOCK_DATA.projectDetails as Record<string, ProjDetail>;
+  // 数据对象与 ProjDetail 为手工对齐的形状（运行时字段齐全），TS 无法证明重叠，按其建议走 unknown 中转
+  const details = MOCK_DATA.projectDetails as unknown as Record<string, ProjDetail>;
   const detail = details[projectId];
   const aerialPhotos = (MOCK_DATA.aerialPhotos as AerialPhotoGroup[]) ?? [];
   const jarvisBim = MOCK_DATA.jarvisBim as { url: string; account: string; password: string; note: string };

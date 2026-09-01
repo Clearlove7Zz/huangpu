@@ -42,7 +42,7 @@ import {
   patchRecord,
   today,
 } from '../services/safety-ai-service';
-import type { Hazard, HealthResult, InspectionRecord, InspectResult } from '../services/safety-ai-service';
+import type { HealthResult, InspectionRecord, InspectionView } from '../services/safety-ai-service';
 
 const { Title, Text } = Typography;
 
@@ -53,7 +53,7 @@ export default function SafetyLog() {
   const [checking, setChecking] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [inspectProgress, setInspectProgress] = useState('');
-  const [lastResult, setLastResult] = useState<InspectResult | InspectionRecord | null>(null);
+  const [lastResult, setLastResult] = useState<InspectionView | null>(null);
   const [history, setHistory] = useState<InspectionRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [rectifyOpen, setRectifyOpen] = useState(false);
@@ -61,7 +61,7 @@ export default function SafetyLog() {
   const [rectifyTime, setRectifyTime] = useState('');
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [form] = Form.useForm();
-  const lastResultRef = useRef<InspectResult | InspectionRecord | null>(null);
+  const lastResultRef = useRef<InspectionView | null>(null);
   lastResultRef.current = lastResult;
 
   const refreshHealth = useCallback(async () => {
@@ -198,7 +198,7 @@ export default function SafetyLog() {
     [],
   );
 
-  const hazardList = lastResult?.hazards ?? (lastResult as { hazards?: Hazard[] } | null)?.hazards ?? [];
+  const hazardList = lastResult?.hazards ?? [];
 
   return (
     <div>

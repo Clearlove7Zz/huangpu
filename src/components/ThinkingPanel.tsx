@@ -145,7 +145,8 @@ function extractResultSummary(toolName: string, data: Record<string, unknown> | 
   
   // search_knowledge / knowledge_search: "找到 N 个结果，来自 M 个文件"
   if (lower.includes('search') || lower.includes('retriev')) {
-    const resultCount = data.result_count ?? data.count ?? data.results?.length;
+    const results = data.results;
+    const resultCount = data.result_count ?? data.count ?? (Array.isArray(results) ? results.length : undefined);
     const kbCounts = data.kb_counts ?? data.kbCounts;
     if (resultCount !== undefined) {
       if (kbCounts && typeof kbCounts === 'object' && Object.keys(kbCounts).length > 0) {
@@ -154,12 +155,11 @@ function extractResultSummary(toolName: string, data: Record<string, unknown> | 
       return `找到 ${resultCount} 个结果`;
     }
   }
-  
+
   // list_knowledge_chunks: "已加载 N/M 个分块"
   if (lower.includes('list') || lower.includes('chunk')) {
     const fetched = data.fetched_chunks ?? data.fetchedChunks;
     const total = data.total_chunks ?? data.totalChunks;
-    const title = data.knowledge_title ?? data.knowledgeTitle ?? data.knowledge_id;
     if (fetched !== undefined && total !== undefined) {
       return `已加载 ${fetched} / ${total} 个分块`;
     }

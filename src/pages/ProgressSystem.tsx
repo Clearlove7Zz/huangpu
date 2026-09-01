@@ -28,6 +28,9 @@ type AerialPhotoGroup = {
   annotations?: Record<string, { x: number; y: number; label: string; type: string }[]>;
 };
 
+/** 证照台账行：project 为按地块拼接的展示字段，其余来自 projectDetails.licenses */
+type LicenseRow = { project: string; name: string; status: string; date: string; deadline: string; warn: boolean };
+
 export default function ProgressSystem() {
   const data = MOCK_DATA.progressSystem as {
     syncSource: string;
@@ -52,7 +55,7 @@ export default function ProgressSystem() {
   const milestones = data.milestonesByProject[projectId] ?? [];
   const wbs = data.wbsByProject[projectId] ?? [];
 
-  const allLicenses = useMemo(() => {
+  const allLicenses = useMemo<LicenseRow[]>(() => {
     return projects.flatMap((p) => {
       const detail = projectDetails[p.id];
       if (!detail) return [];
@@ -66,14 +69,8 @@ export default function ProgressSystem() {
   const aerialPhotos = (MOCK_DATA.aerialPhotos as AerialPhotoGroup[]) ?? [];
   const [lightbox, setLightbox] = useState<{ src: string; caption: string } | null>(null);
 
-  const ov = MOCK_DATA.outputValue as {
-    cumPhysical: number;
-    cumMeasured: number;
-    physicalRate: number;
-    measuredRate: number;
-    yearlyChart: { year: number; plan: number; physical: number; measured: number }[];
-    monthly: { plan: number[]; physical: (number | null)[]; measured: (number | null)[] };
-  };
+  // 不加局部窄化标注：mock-data 的 outputValue 字段齐全，窄标注曾导致 totalPlan/timeline 等字段"不存在"
+  const ov = MOCK_DATA.outputValue;
 
   const yearlyOption: EChartsOption = useMemo(
     () => ({
@@ -156,7 +153,7 @@ export default function ProgressSystem() {
                     { title: '证照', dataIndex: 'name', render: (v: string) => editable ? <Input size="small" defaultValue={v} /> : v },
                     { title: '状态', dataIndex: 'status', width: 100, render: (s: string) => editable ? <Input size="small" defaultValue={s} /> : (s === 'done' ? <Tag color="success">已完成</Tag> : <Tag color="processing">办理中</Tag>) },
                     { title: '完成时间', dataIndex: 'date', width: 120, render: (v: string) => editable ? <Input size="small" defaultValue={v} /> : v },
-                    { title: '时限', dataIndex: 'deadline', width: 120, render: (v: string, r: { warn: boolean }) => (v !== '—' && r.warn ? <Tag color="error">{v}</Tag> : v) },
+                    { title: '时限', dataIndex: 'deadline', width: 120, render: (v: string, r: LicenseRow) => (v !== '—' && r.warn ? <Tag color="error">{v}</Tag> : v) },
                   ]}
                   dataSource={allLicenses}
                   scroll={{ x: 700 }}
