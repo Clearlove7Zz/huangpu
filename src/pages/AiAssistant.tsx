@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Drawer, Empty, Input, Tag } from 'antd';
-import { DeleteOutlined, MessageOutlined, PaperClipOutlined, PlusOutlined, SendOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, Drawer, Empty, Input, Popover, Tag } from 'antd';
+import { DeleteOutlined, MessageOutlined, PaperClipOutlined, PlusOutlined, SearchOutlined, SendOutlined, UserOutlined } from '@ant-design/icons';
 import { abortCurrentChat, chatWithRag } from '../services/chat-service';
 import { ragReady } from '../config/rag-config';
 import { listAgents, listKnowledgeBases } from '../services/kb-service';
@@ -18,6 +18,8 @@ import ThinkingPanel, { type TimelineEvent } from '../components/ThinkingPanel';
 import type { AiAnswer } from '../utils/answer-engine';
 import { continueKnowledgeStream, deleteRemoteSession, listRemoteMessages, renderInlineKbTags } from '../services/rag';
 import type { RagReference, RagStreamEvents, RemoteMessage } from '../services/rag';
+import { faqSearchMany, searchKnowledge } from '../services/search-service';
+import type { FaqHit, KnowledgeDocHit } from '../services/search-service';
 import type { CitationInfo } from '../components/MarkdownView';
 import type { ChatCallbacks } from '../services/chat-service';
 import { createRemoteSession, deleteTemporaryAttachment, getTemporaryAttachment, uploadTemporaryAttachment } from '../services/attachment-service';
@@ -201,6 +203,33 @@ const active = sessions.find((session) => session.id === activeSessionId)
     setExpandedRefKey(null);
     setRefDrawer({ open: true, refs: msg?.references ?? [], highlight: info });
   }, []);
+
+  // —— 资料速查（FAQ 语义命中 + 文档搜索，不经过 LLM）——
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false);
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
+  const [quickSearchLoading, setQuickSearchLoading] = useState(false);
+  const [quickSearchResult, setQuickSearchResult] = useState<{ faqs: FaqHit[]; docs: KnowledgeDocHit[] } | null>(null);
+  /** 文档卡展开的 summary 全文 key */
+  const [expandedDocKey, setExpandedDocKey] = useState<string | null>(null);
+
+  const runQuickSearch = async () => {
+    const query = quickSearchQuery.trim();
+    if (!query || quickSearchLoading) return;
+    setQuickSearchLoading(true);
+    setQuickSearchResult(null);
+    setExpandedDocKey(null);
+    try {
+      // FAQ 范围：当前选中的知识库；未选则全部可用库（前 5 个防全量轰炸）
+      const faqKbIds = selectedKbIds.length > 0 ? selectedKbIds : availableKbs.slice(0, 5).map((kb) => kb.id);
+      const [faqs, docs] = await Promise.all([
+        faqSearchMany(faqKbIds, query),
+        searchKnowledge(query),
+      ]);
+      setQuickSearchResult({ faqs, docs });
+    } finally {
+      setQuickSearchLoading(false);
+    }
+  };
   const streaming = useMemo(() => active?.messages.some((message) => message.streaming), [active?.messages]);
 
   useEffect(() => {
@@ -794,6 +823,72 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
                 <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileSelect} accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.jpg,.jpeg,.png,.mp3,.wav,.m4a" />
                 <Button type="text" className="composer-icon-button" icon={<PaperClipOutlined />} aria-label="上传附件" disabled={busy || !ragReady()} onClick={() => fileInputRef.current?.click()} />
                 <KnowledgeFolderPicker folders={availableKbs} selectedIds={selectedKbIds} onChange={setSelectedKbIds} disabled={busy || !ragReady()} />
+                <Popover
+                  open={quickSearchOpen}
+                  onOpenChange={(open) => { setQuickSearchOpen(open); if (!open) setExpandedDocKey(null); }}
+                  trigger="click"
+                  placement="topLeft"
+                  overlayClassName="quick-search-popover"
+                  overlayInnerStyle={{ padding: 0 }}
+                  content={
+                    <div className="quick-search-panel">
+                      <div className="quick-search-bar">
+                        <Input
+                          value={quickSearchQuery}
+                          onChange={(event) => setQuickSearchQuery(event.target.value)}
+                          onKeyDown={(event) => { if (event.key === 'Enter') void runQuickSearch(); }}
+                          placeholder="搜索 FAQ 口径 / 项目文档"
+                          allowClear
+                          size="small"
+                        />
+                        <Button type="primary" size="small" icon={<SearchOutlined />} loading={quickSearchLoading} disabled={!quickSearchQuery.trim()} onClick={() => void runQuickSearch()}>检索</Button>
+                      </div>
+                      <div className="quick-search-results">
+                        {!quickSearchResult && !quickSearchLoading && (
+                          <div className="quick-search-hint">输入问题检索知识库：FAQ 标准口径秒回，并列出相关文档。不消耗模型。</div>
+                        )}
+                        {quickSearchResult && quickSearchResult.faqs.length === 0 && quickSearchResult.docs.length === 0 && (
+                          <div className="quick-search-hint">未检索到相关内容</div>
+                        )}
+                        {quickSearchResult && quickSearchResult.faqs.length > 0 && (
+                          <div className="quick-search-section">
+                            <div className="quick-search-section-title">FAQ 标准口径</div>
+                            {quickSearchResult.faqs.map((faq, index) => (
+                              <div className="faq-hit-card" key={`faq-${index}`}>
+                                <div className="faq-hit-card__q">Q：{faq.question}</div>
+                                <div className="faq-hit-card__a">{faq.answer}</div>
+                                {faq.score !== undefined && <div className="faq-hit-card__score">相似度 {faq.score.toFixed(2)}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {quickSearchResult && quickSearchResult.docs.length > 0 && (
+                          <div className="quick-search-section">
+                            <div className="quick-search-section-title">相关文档</div>
+                            {quickSearchResult.docs.map((doc) => {
+                              const key = `${doc.kbId}|${doc.id}`;
+                              const expanded = expandedDocKey === key;
+                              return (
+                                <div
+                                  key={key}
+                                  className={`doc-hit-card${expanded ? ' doc-hit-card--expanded' : ''}`}
+                                  onClick={() => setExpandedDocKey(expanded ? null : key)}
+                                >
+                                  <div className="doc-hit-card__title">📄 {doc.title}</div>
+                                  {doc.summary && (
+                                    <div className={`doc-hit-card__summary${expanded ? ' is-expanded' : ''}`}>{doc.summary}</div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  }
+                >
+                  <Button type="text" className="composer-icon-button" icon={<SearchOutlined />} aria-label="资料速查" disabled={busy || !ragReady()} />
+                </Popover>
               </div>
               {busy ? (
                 <button type="button" className="ai-stop-btn" aria-label="停止生成" onClick={stopGeneration}>
