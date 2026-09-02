@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Drawer, Empty, Input, Tag } from 'antd';
 import { DeleteOutlined, MessageOutlined, PaperClipOutlined, PlusOutlined, SendOutlined, UserOutlined } from '@ant-design/icons';
 import { abortCurrentChat, chatWithRag } from '../services/chat-service';
@@ -67,6 +67,40 @@ let _msgCounter = 0;
 function nextMsgId(): number {
   _msgCounter += 1;
   return Date.now() * 1000 + _msgCounter;
+}
+
+/**
+ * 流式文本渲染节流器：delta 攒进 buffer，50ms 批量上屏。
+ * 每个 delta 直接 setState 会让全文 markdown 管线（remark/rehype/katex/highlight）
+ * 以每秒几十次的频率重跑且成本随内容增长（O(n²)），是流式卡顿的根因；
+ * 节流后重解析频率 ≤20/s，与 WeKnora 的 marked 轻量同步解析观感对齐。
+ * 结束时必须 flush()（done/abort/error 路径），否则最后一段内容丢失。
+ */
+function createStreamThrottle(onFlush: (chunk: string) => void) {
+  let buffer = '';
+  let timer: number | null = null;
+  const flush = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+    if (!buffer) return;
+    const chunk = buffer;
+    buffer = '';
+    onFlush(chunk);
+  };
+  return {
+    push(delta: string) {
+      buffer += delta;
+      if (timer === null) {
+        timer = window.setTimeout(() => {
+          timer = null;
+          flush();
+        }, 50);
+      }
+    },
+    flush,
+  };
 }
 
 /** 引用卡片唯一 key（对齐 WeKnora resolveReferenceHighlightKey 的匹配键思路） */
@@ -146,12 +180,27 @@ export default function AiAssistant() {
   const shouldFollowRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<number | null>(null);
+  /** 当前活跃流的答案节流器（主路径/续流共用，结束时 flush 防丢尾段） */
+  const answerThrottleRef = useRef<ReturnType<typeof createStreamThrottle> | null>(null);
 
   // active 解析：优先找 activeSessionId；找不到时优先回退到空会话（避免删除老
 // 会话后仍渲染老消息），最后才回退到 sessions 末尾（最近创建的新会话）。
 const active = sessions.find((session) => session.id === activeSessionId)
   ?? sessions.find((session) => session.messages.length === 0)
   ?? sessions[sessions.length - 1];
+
+  /** 最新消息列表镜像（stable 引用回调里读取，避免 memo 闭包旧化） */
+  const messagesRef = useRef<ChatMsg[]>([]);
+  useEffect(() => {
+    messagesRef.current = active?.messages ?? [];
+  }, [active?.messages]);
+
+  /** 引用徽章点击（stable 引用：MarkdownView memo 跳过重渲染后闭包依然正确） */
+  const handleCitationClick = useCallback((msgId: number, info: CitationInfo) => {
+    const msg = messagesRef.current.find((m) => m.id === msgId);
+    setExpandedRefKey(null);
+    setRefDrawer({ open: true, refs: msg?.references ?? [], highlight: info });
+  }, []);
   const streaming = useMemo(() => active?.messages.some((message) => message.streaming), [active?.messages]);
 
   useEffect(() => {
@@ -259,9 +308,11 @@ useEffect(() => {
       const aiMsg: ChatMsg = { id: nextMsgId(), role: 'ai', content: '', streaming: true, timeline: [], startedAt: Date.now() };
       setSessions((current) => current.map((session) => session.id === sessionIdNumber ? { ...session, messages: [...session.messages, aiMsg] } : session));
       setBusy(true);
+      const throttle = createStreamThrottle((chunk) => updateSession(sessionIdNumber, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, source: 'rag', content: message.content + chunk } : message) })));
+      answerThrottleRef.current = throttle;
       void continueKnowledgeStream(ragSessionId, incompleteId, {
         onAnswerDelta: (delta) => {
-          updateSession(sessionIdNumber, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, source: 'rag', content: message.content + delta } : message) }));
+          throttle.push(delta);
         },
         onThinkingDelta: (eventId, delta, done) => {
           updateSession(sessionIdNumber, (session) => ({
@@ -278,10 +329,12 @@ useEffect(() => {
           }));
         },
         onDone: () => {
+          throttle.flush();
           updateSession(sessionIdNumber, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, streaming: false, endedAt: Date.now() } : message) }));
           setBusy(false);
         },
         onAbort: () => {
+          throttle.flush();
           updateSession(sessionIdNumber, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, streaming: false, endedAt: Date.now() } : message) }));
           setBusy(false);
         },
@@ -388,6 +441,9 @@ useEffect(() => {
   const makeStreamHandlers = (sessionId: number, aiMsgId: number) => {
     let timelineSeq = 0;
     let lastMessageId = '';
+    // 答案增量节流（50ms 批量上屏）：全文 markdown 重解析是流式卡顿根因
+    const answerThrottle = createStreamThrottle((chunk) => updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, source: 'rag', content: message.content + chunk } : message) })));
+    answerThrottleRef.current = answerThrottle;
     const patchTimeline = (fn: (events: TimelineEvent[]) => TimelineEvent[]) => {
       updateSession(sessionId, (session) => ({
         ...session,
@@ -442,7 +498,7 @@ useEffect(() => {
       },
       onAnswerDelta: (delta) => {
         setAssistantState('generating');
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, source: 'rag', content: message.content + delta } : message) }));
+        answerThrottle.push(delta);
       },
       onReferences: (refs) => {
         setAssistantState('organizing');
@@ -458,6 +514,7 @@ useEffect(() => {
       onAbort: () => {
         // 用户主动停止：仅结束当前消息，不触发任何本地兜底
         stopTypewriter();
+        answerThrottle.flush();
         patchMessage({ streaming: false, endedAt: Date.now() });
         setAssistantState('done');
         setBusy(false);
@@ -465,11 +522,13 @@ useEffect(() => {
       onInterrupted: () => {
         // 意外中断（空闲超时/断网）：结束当前消息并标记 interrupted，界面出现"继续生成"
         stopTypewriter();
+        answerThrottle.flush();
         patchMessage({ streaming: false, endedAt: Date.now(), interrupted: true });
         setAssistantState('done');
         setBusy(false);
       },
       onDone: () => {
+        answerThrottle.flush();
         if (!timerRef.current) {
           setAssistantState('done');
           patchMessage({ streaming: false, endedAt: Date.now() });
@@ -698,7 +757,7 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
               {message.role === 'ai' && message.startedAt && (message.streaming || (message.timeline?.length ?? 0) > 0) && (
                 <ThinkingPanel events={message.timeline ?? []} startedAt={message.startedAt} endedAt={message.endedAt} />
               )}
-              {message.content && <div className="ai-message-content">{message.role === 'ai' ? <MarkdownView source={message.content} onCitationClick={(info) => { setExpandedRefKey(null); setRefDrawer({ open: true, refs: message.references ?? [], highlight: info }); }} /> : message.content}</div>}
+              {message.content && <div className="ai-message-content">{message.role === 'ai' ? <MarkdownView source={message.content} onCitationClick={(info) => handleCitationClick(message.id, info)} /> : message.content}</div>}
               {message.attachments && message.attachments.length > 0 && <div className="ai-message-attachments">{message.attachments.map((file) => <Tag key={file.id} icon={<PaperClipOutlined />}>{file.name}</Tag>)}</div>}
               {message.source && !message.streaming && <div className="ai-source-badge"><span className={`ai-source-dot ai-source-dot-${message.source}`} />{message.source === 'rag' ? 'RAG 在线回答' : '本地演示引擎'}</div>}
               {message.gatewayAudit && !message.streaming && <div className={`ai-gateway-audit ai-gateway-audit-${message.gatewayAudit.verdict}`}>{message.gatewayAudit.verdict === 'pass' ? '✓ ' : '⚠ '}{message.gatewayAudit.message}</div>}

@@ -1,86 +1,45 @@
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
-import rehypeKatex from 'rehype-katex';
-import rehypeHighlight from 'rehype-highlight';
-import rehypeRaw from 'rehype-raw';
+import { marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
+import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
+import { memo, useEffect, useRef, useMemo } from 'react';
+import { renderMermaidToSvg } from './Mermaid';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github.css';
-import { useMemo } from 'react';
-import Mermaid from './Mermaid';
 
-/** 引用徽章点击信息（WeKnora <kb doc chunk_id kb_id/> 转化的内联徽章） */
+/**
+ * WeKnora 风格 Markdown 渲染器 —— 技术栈照搬 WeKnora chatMarkdownRenderer：
+ * marked 同步解析（毫秒级字符串处理）+ DOMPurify 消毒 + dangerouslySetInnerHTML 注入，
+ * 替代 react-markdown 的 unified 管线（每个 delta 全文重跑 parse→AST→插件→React diff，
+ * 成本随内容增长，是流式卡顿根因）。marked 方案与 WeKnora 流式观感对齐。
+ *
+ * - GFM + breaks:true（单换行转 <br>，WeKnora 同款）
+ * - 数学公式：marked-katex-extension（throwOnError:false + nonStandard，$$ 行内也按 display 渲染）
+ * - 代码高亮：highlight.js（github 主题，仅显式语言标注才高亮）
+ * - Mermaid：```mermaid 代码块输出占位槽，渲染后异步替换为 SVG
+ * - 引用徽章：rag.ts 注入的 <span class="citation-badge" data-*> 经事件委托点击
+ * - 输出 class 与旧 react-markdown 版完全一致（.md-*），CSS/视觉零变化
+ */
+
 export interface CitationInfo {
   doc: string;
   chunkId?: string;
   kbId?: string;
 }
 
-/** WeKnora 风格 Markdown 渲染器（渲染能力对齐 WeKnora chatMarkdownRenderer）
- *  - 支持 GFM：表格 / 任务列表 / 删除线
- *  - 支持数学公式：$...$ / $$...$$ / \(...\) / \[...\]（KaTeX 渲染）
- *  - 支持代码高亮：highlight.js（github 主题，与 WeKnora 一致）
- *  - 支持 Mermaid 图表：```mermaid 代码块渲染为 SVG
- *  - 支持内联引用徽章：<span class="citation-badge" data-doc data-chunk-id>（rag.ts 生成，
- *    rehype-raw 解析 → sanitize 放行 data 属性 → components 拦截为可点击组件）
- *  - 安全：rehype-raw 解析后经 sanitize 过滤危险 HTML；KaTeX / highlight 在 sanitize 之后执行，
- *    输入已被净化为纯文本，其输出可信
- *  - 视觉：复用全站青绿 token（index.css .md-*）
- */
-const sanitizeSchema = {
-  ...defaultSchema,
-  attributes: {
-    ...defaultSchema.attributes,
-    code: [...((defaultSchema.attributes && defaultSchema.attributes.code) ?? []), ['className']],
-    span: [
-      ...((defaultSchema.attributes && defaultSchema.attributes.span) ?? []),
-      ['className'],
-      ['data-doc'],
-      ['data-chunk-id'],
-      ['data-kb-id'],
-    ],
-    // remark-math 的 display 公式容器是 <div class="math math-display">
-    div: [...((defaultSchema.attributes && defaultSchema.attributes.div) ?? []), ['className']],
-  },
-};
-
-export default function MarkdownView({
-  source,
-  onCitationClick,
-}: {
-  source: string;
-  streaming?: boolean;
-  onCitationClick?: (info: CitationInfo) => void;
-}) {
-  const cleaned = useMemo(() => preprocess(source), [source]);
-  return (
-    <div className="md-body">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[
-          // rehype-raw 在 sanitize 前：解析 rag.ts 注入的引用徽章 HTML，sanitize 兜底过滤危险标记
-          ...(source.includes('citation-badge') ? [rehypeRaw] : []),
-          [rehypeSanitize, sanitizeSchema],
-          rehypeKatex,
-          [rehypeHighlight, { detect: false, ignoreMissing: true }],
-        ]}
-        components={componentsFor(onCitationClick)}
-      >
-        {cleaned}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-/** 预处理：对齐 WeKnora chatMarkdownRenderer 的流式与定界符修复 */
-function preprocess(src: string): string {
-  let s = src;
-  // WeKnora preprocessMathDelimiters：LLM 常输出的原生 LaTeX 定界符 → $ / $$
-  // \[...\] → $$...$$   \(...\) → $...$
-  s = s
+/** WeKnora preprocessMathDelimiters：LLM 常输出的原生 LaTeX 定界符 → $ / $$ */
+function preprocessMathDelimiters(src: string): string {
+  return src
     .replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$')
     .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+}
+
+/** 预处理：数学定界符 + $$ 独立成块 + 流式残尾保护（** 未闭合截断 / $$ 未闭合补全） */
+function preprocess(src: string): string {
+  let s = preprocessMathDelimiters(src);
+  // WeKnora marked-katex nonStandard 行为对齐：与文字混排的 $$...$$ 摘成独立显示块，
+  // 否则按行内公式渲染压缩分式，在 1.85 行高下穿过分线
+  s = blockifyDisplayMath(s);
   // 流式场景：若末尾 `**` 是奇数个，截掉，避免最后整段加粗
   const boldCount = (s.match(/\*\*/g) ?? []).length;
   if (boldCount % 2 === 1) {
@@ -92,16 +51,11 @@ function preprocess(src: string): string {
   if (mathCount % 2 === 1) {
     s += ' $$';
   }
-  // WeKnora marked-katex nonStandard 行为对齐：行内混排的 $$...$$ 摘成独立
-  // 显示块（displayMode），否则 remark-math 会按行内公式渲染压缩分式，
-  // 在 1.85 行高下分式会穿过分线
-  s = blockifyDisplayMath(s);
   return s;
 }
 
 /** 把与文字混排的 $$...$$ 摘成独立显示块（跳过代码块内容） */
 function blockifyDisplayMath(src: string): string {
-  // 按代码块切分（捕获组：偶数索引为普通文本），流式未闭合代码块也算
   const parts = src.split(/(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/g);
   for (let i = 0; i < parts.length; i += 2) {
     const lines = parts[i].split('\n');
@@ -122,68 +76,136 @@ function blockifyDisplayMath(src: string): string {
   return parts.join('');
 }
 
-const componentsFor = (onCitationClick?: (info: CitationInfo) => void) => ({
-  h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h1 className="md-h1" {...props} />,
-  h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h2 className="md-h2" {...props} />,
-  h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h3 className="md-h3" {...props} />,
-  h4: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h4 className="md-h4" {...props} />,
-  p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <p className="md-p" {...props} />,
-  ul: (props: React.HTMLAttributes<HTMLUListElement>) => <ul className="md-ul" {...props} />,
-  ol: (props: React.HTMLAttributes<HTMLOListElement>) => <ol className="md-ol" {...props} />,
-  li: (props: React.LiHTMLAttributes<HTMLLIElement>) => <li className="md-li" {...props} />,
-  blockquote: (props: React.BlockquoteHTMLAttributes<HTMLQuoteElement>) => <blockquote className="md-quote" {...props} />,
-  hr: () => <div className="md-hr" aria-hidden />,
-  span: (props: React.HTMLAttributes<HTMLSpanElement> & { node?: unknown }) => {
-    const { node, className, ...rest } = props;
-    // rag.ts 注入的引用徽章 → 可点击组件（打开右侧来源抽屉）
-    if (className?.includes('citation-badge')) {
-      const el = node as { properties?: Record<string, string> } | undefined;
-      const doc = el?.properties?.['data-doc'] ?? '';
-      const chunkId = el?.properties?.['data-chunk-id'];
-      const kbId = el?.properties?.['data-kb-id'];
-      return (
-        <span
-          className="citation-badge"
-          role="button"
-          tabIndex={0}
-          onClick={() => onCitationClick?.({ doc, chunkId, kbId })}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') onCitationClick?.({ doc, chunkId, kbId });
-          }}
-        >
-          {rest.children}
-        </span>
-      );
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+let markedConfigured = false;
+
+function configureMarked(): void {
+  if (markedConfigured) return;
+  marked.use({
+    gfm: true,
+    breaks: true,
+    renderer: {
+      // 代码块：hljs 高亮（仅显式语言）；mermaid 输出占位槽由渲染后 effect 替换为 SVG
+      code(token) {
+        const text = String(token.text ?? '');
+        const lang = (token.lang ?? '').trim().split(/\s+/)[0].toLowerCase();
+        if (lang === 'mermaid') {
+          return `<div class="md-mermaid-slot" data-mermaid="${encodeURIComponent(text)}"><pre class="md-pre"><code class="md-code-block">${escapeHtml(text)}</code></pre></div>`;
+        }
+        let body: string;
+        try {
+          body = lang && hljs.getLanguage(lang) ? hljs.highlight(text, { language: lang }).value : escapeHtml(text);
+        } catch {
+          body = escapeHtml(text);
+        }
+        return `<pre class="md-pre"><code class="md-code-block language-${escapeHtml(lang || 'text')} hljs">${body}</code></pre>`;
+      },
+      // 行内代码
+      codespan(token) {
+        return `<code class="md-code-inline">${escapeHtml(String(token.text ?? ''))}</code>`;
+      },
+    },
+  });
+  // WeKnora 同款：throwOnError false（错误公式显示原文）+ nonStandard（单 $ 行内公式 / $$ 行内也按 display）
+  marked.use(markedKatex({ throwOnError: false, nonStandard: true }));
+  markedConfigured = true;
+}
+
+/** marked 默认输出 → 加上与旧版一致 .md-* class（字符串替换，KaTeX/hljs/徽章输出不含这些裸标签） */
+function decorateClasses(html: string): string {
+  return html
+    .replaceAll('<h1>', '<h1 class="md-h1">')
+    .replaceAll('<h2>', '<h2 class="md-h2">')
+    .replaceAll('<h3>', '<h3 class="md-h3">')
+    .replaceAll('<h4>', '<h4 class="md-h4">')
+    .replaceAll('<p>', '<p class="md-p">')
+    .replaceAll('<ul>', '<ul class="md-ul">')
+    .replaceAll('<ol>', '<ol class="md-ol">')
+    .replaceAll('<li>', '<li class="md-li">')
+    .replaceAll('<blockquote>', '<blockquote class="md-quote">')
+    .replaceAll('<hr>', '<div class="md-hr" aria-hidden="true"></div>')
+    .replaceAll('<table>', '<div class="md-table-wrap"><table class="md-table">')
+    .replaceAll('</table>', '</table></div>')
+    .replaceAll('<thead>', '<thead class="md-thead">')
+    .replaceAll('<tbody>', '<tbody class="md-tbody">')
+    .replaceAll('<tr>', '<tr class="md-tr">')
+    .replaceAll('<th>', '<th class="md-th">')
+    .replaceAll('<td>', '<td class="md-td">')
+    .replaceAll('<strong>', '<strong class="md-strong">')
+    .replaceAll('<em>', '<em class="md-em">')
+    .replaceAll('<del>', '<del class="md-del">')
+    .replaceAll('<a href=', '<a class="md-link" target="_blank" rel="noreferrer" href=');
+}
+
+/** marked 解析 → class 装饰 → DOMPurify 消毒（放行 data-* / target / task-list input） */
+function renderMarkdown(src: string): string {
+  configureMarked();
+  const raw = marked.parse(src, { async: false }) as string;
+  const decorated = decorateClasses(raw);
+  return DOMPurify.sanitize(decorated, {
+    ADD_ATTR: ['target', 'data-doc', 'data-chunk-id', 'data-kb-id', 'data-mermaid', 'data-done', 'rel'],
+    ADD_TAGS: ['input'],
+  });
+}
+
+/** 渲染后异步替换 mermaid 占位槽为 SVG（失败保留源码，流式未完整语法不标 done 强求） */
+async function renderMermaidSlots(container: HTMLElement | null): Promise<void> {
+  if (!container) return;
+  const slots = container.querySelectorAll<HTMLElement>('.md-mermaid-slot:not([data-done])');
+  for (const slot of Array.from(slots)) {
+    slot.setAttribute('data-done', '1');
+    let chart = '';
+    try {
+      chart = decodeURIComponent(slot.dataset.mermaid ?? '');
+      const svg = await renderMermaidToSvg(chart);
+      slot.classList.add('md-mermaid');
+      slot.innerHTML = svg;
+    } catch {
+      // 语法错误/未完整：保留 <pre> 源码展示
     }
-    return <span className={className} {...rest} />;
-  },
-  code: (props: React.HTMLAttributes<HTMLElement> & { inline?: boolean; node?: unknown }) => {
-    const { className, children, inline, node, ...rest } = props;
-    // ```mermaid 代码块 → 渲染为 SVG 图表（对齐 WeKnora）
-    const match = /language-(\w+)/.exec(className ?? '');
-    if (!inline && match?.[1] === 'mermaid') {
-      return <Mermaid chart={String(children).replace(/\n$/, '')} />;
-    }
-    if (inline) return <code className="md-code-inline">{children}</code>;
-    return (
-      <code className={className ?? 'md-code-block'} {...rest}>
-        {children}
-      </code>
-    );
-  },
-  pre: (props: React.HTMLAttributes<HTMLPreElement>) => <pre className="md-pre" {...props} />,
-  table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
-    <div className="md-table-wrap">
-      <table className="md-table" {...props} />
-    </div>
-  ),
-  thead: (props: React.HTMLAttributes<HTMLTableSectionElement>) => <thead className="md-thead" {...props} />,
-  tbody: (props: React.HTMLAttributes<HTMLTableSectionElement>) => <tbody className="md-tbody" {...props} />,
-  tr: (props: React.HTMLAttributes<HTMLTableRowElement>) => <tr className="md-tr" {...props} />,
-  th: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => <th className="md-th" {...props} />,
-  td: (props: React.TdHTMLAttributes<HTMLTableCellElement>) => <td className="md-td" {...props} />,
-  a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a className="md-link" target="_blank" rel="noreferrer" {...props} />,
-  strong: (props: React.HTMLAttributes<HTMLElement>) => <strong className="md-strong" {...props} />,
-  em: (props: React.HTMLAttributes<HTMLElement>) => <em className="md-em" {...props} />,
-  del: (props: React.HTMLAttributes<HTMLElement>) => <del className="md-del" {...props} />,
-});
+  }
+}
+
+function MarkdownViewInner({
+  source,
+  onCitationClick,
+}: {
+  source: string;
+  streaming?: boolean;
+  onCitationClick?: (info: CitationInfo) => void;
+}) {
+  const html = useMemo(() => renderMarkdown(preprocess(source)), [source]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // latest-ref：memo 跳过重渲染后点击委托依然拿到最新回调
+  const onCitationRef = useRef(onCitationClick);
+  onCitationRef.current = onCitationClick;
+
+  useEffect(() => {
+    void renderMermaidSlots(containerRef.current);
+  }, [html]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="md-body"
+      onClick={(e) => {
+        const badge = (e.target as HTMLElement).closest?.('.citation-badge');
+        if (badge) {
+          onCitationRef.current?.({
+            doc: badge.getAttribute('data-doc') ?? '',
+            chunkId: badge.getAttribute('data-chunk-id') ?? undefined,
+            kbId: badge.getAttribute('data-kb-id') ?? undefined,
+          });
+        }
+      }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+/** source 不变即跳过整棵子树（流式时历史消息零开销） */
+const MarkdownView = memo(MarkdownViewInner, (prev, next) => prev.source === next.source);
+
+export default MarkdownView;
