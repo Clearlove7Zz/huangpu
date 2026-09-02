@@ -438,6 +438,23 @@ body,
 .reference-card strong { color: #1f2328; font-size: 13px; }
 .reference-card p { margin: 8px 0 0; color: rgba(31,35,40,.65); font-size: 12px; line-height: 20px; white-space: pre-wrap; word-break: break-word; }
 
+/* —— 引用来源抽屉：可展开卡片（对齐 WeKnora ChatReferencesDrawer）—— */
+.reference-card { cursor: pointer; transition: border-color .15s, box-shadow .15s, background-color .15s; }
+.reference-card:hover { border-color: #e07b39; }
+.reference-card--expanded { border-color: #e07b39; background: #fffdf9; }
+.reference-card--highlight { border-color: #e07b39 !important; box-shadow: 0 0 0 3px rgba(224,123,57,.18); animation: ref-card-glow 1.6s ease; }
+@keyframes ref-card-glow { 0%, 40% { background: #fdf1e3; } 100% { background: #fff; } }
+.reference-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.reference-card__title { color: #1f2328; font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.reference-card__chevron { flex-shrink: 0; color: rgba(31,35,40,.35); font-size: 16px; transform: rotate(0deg); transition: transform .18s; }
+.reference-card__chevron.is-open { transform: rotate(90deg); }
+.reference-card__summary { margin: 8px 0 0; color: rgba(31,35,40,.65); font-size: 12px; line-height: 20px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.reference-card__summary.is-expanded { display: block; overflow: visible; -webkit-line-clamp: unset; }
+
+/* —— 回答内联引用徽章（对齐 WeKnora citation-kb pill）—— */
+.citation-badge { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; margin: 0 3px; padding: 1px 9px; border: 1px solid #e9e0d4; border-radius: 999px; background: #f6f3ef; color: #6b3a16; font-size: 12px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; vertical-align: middle; user-select: none; transition: background-color .15s, border-color .15s; }
+.citation-badge:hover { background: #fbeede; border-color: #e07b39; }
+
 @media (max-width: 760px) {
   .ai-workspace { height: calc(100vh - 76px); min-height: 0; gap: 0; }
   .ai-session-rail { display: none; }

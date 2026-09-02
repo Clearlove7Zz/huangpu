@@ -17,7 +17,8 @@ import MarkdownView from '../components/MarkdownView';
 import ThinkingPanel, { type TimelineEvent } from '../components/ThinkingPanel';
 import type { AiAnswer } from '../utils/answer-engine';
 import { continueKnowledgeStream, deleteRemoteSession, listRemoteMessages } from '../services/rag';
-import type { RagStreamEvents, RemoteMessage } from '../services/rag';
+import type { RagReference, RagStreamEvents, RemoteMessage } from '../services/rag';
+import type { CitationInfo } from '../components/MarkdownView';
 import type { ChatCallbacks } from '../services/chat-service';
 import { createRemoteSession, deleteTemporaryAttachment, getTemporaryAttachment, uploadTemporaryAttachment } from '../services/attachment-service';
 import { downloadArtifact, listMessageArtifacts } from '../services/artifact-service';
@@ -27,7 +28,7 @@ interface ChatMsg {
   id: number;
   role: 'user' | 'ai';
   content: string;
-  references?: { title: string; detail: string }[];
+  references?: RagReference[];
   streaming?: boolean;
   attachments?: { id: string; name: string; size: number; status: string }[];
   source?: 'rag' | 'local';
@@ -66,6 +67,18 @@ let _msgCounter = 0;
 function nextMsgId(): number {
   _msgCounter += 1;
   return Date.now() * 1000 + _msgCounter;
+}
+
+/** 引用卡片唯一 key（对齐 WeKnora resolveReferenceHighlightKey 的匹配键思路） */
+function referenceCardKey(ref: RagReference, index: number): string {
+  return `${ref.knowledgeId ?? ''}|${ref.chunkId ?? ''}|${ref.title}|${index}`;
+}
+
+/** 徽章点击的定位信息是否命中此引用卡片（chunkId 优先，doc 名兜底） */
+function matchHighlight(ref: RagReference, highlight?: CitationInfo): boolean {
+  if (!highlight) return false;
+  if (highlight.chunkId && ref.chunkId) return ref.chunkId === highlight.chunkId;
+  return ref.title === highlight.doc || ref.filename === highlight.doc;
 }
 
 /** 停止生成图标：方形容器内白色实心正方形（仿 Claude/Anthropic stop 按钮风格） */
@@ -115,7 +128,18 @@ export default function AiAssistant() {
   const [availableAgents, setAvailableAgents] = useState<{ id: string; name: string; mode: string; builtin: boolean }[]>([]);
   const [attachments, setAttachments] = useState<AttachmentView[]>([]);
   const [, setAssistantState] = useState<ThinkingOrbState>('idle');
-  const [refDrawer, setRefDrawer] = useState<{ open: boolean; refs: { title: string; detail: string }[] }>({ open: false, refs: [] });
+  const [refDrawer, setRefDrawer] = useState<{ open: boolean; refs: RagReference[]; highlight?: CitationInfo }>({ open: false, refs: [] });
+  /** 抽屉内展开完整摘要的卡片 key（点击切换，对齐 WeKnora toggleDocumentSnippet） */
+  const [expandedRefKey, setExpandedRefKey] = useState<string | null>(null);
+
+  // 徽章/引用点击打开抽屉后：滚动定位到高亮卡片（等 Drawer portal 挂载完成）
+  useEffect(() => {
+    if (!refDrawer.open || !refDrawer.highlight) return;
+    const timer = window.setTimeout(() => {
+      document.querySelector('.reference-card--highlight')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [refDrawer.open, refDrawer.highlight]);
   const [activeRagSessionId, setActiveRagSessionId] = useState<string>();
   const bottomRef = useRef<HTMLDivElement>(null);
   const conversationRef = useRef<HTMLElement>(null);
@@ -179,13 +203,28 @@ useEffect(() => {
         timeline.push({ kind: 'thinking', id: `history-thinking-${messages.length}`, content: thinkMatch[1].trim(), pending: false, seq: 0 });
         content = content.slice(thinkMatch[0].length).trim();
       }
-      const references = (item.knowledge_references ?? [])
-        .map((ref) => {
-          const r = ref as { knowledge_title?: string; knowledge_filename?: string; content?: string };
-          const title = r.knowledge_title ?? r.knowledge_filename ?? '';
-          return title ? { title, detail: r.content ?? '' } : null;
-        })
-        .filter((ref): ref is { title: string; detail: string } => ref !== null);
+      const references = (item.knowledge_references ?? []).flatMap((ref): RagReference[] => {
+        const r = ref as {
+          knowledge_title?: string;
+          knowledge_filename?: string;
+          content?: string;
+          chunk_id?: string;
+          knowledge_id?: string;
+          knowledge_base_id?: string;
+          chunk_index?: number;
+        };
+        const title = r.knowledge_title ?? r.knowledge_filename ?? '';
+        if (!title) return [];
+        return [{
+          title,
+          content: r.content ?? '',
+          chunkId: r.chunk_id || undefined,
+          knowledgeId: r.knowledge_id || undefined,
+          knowledgeBaseId: r.knowledge_base_id || undefined,
+          chunkIndex: r.chunk_index,
+          filename: r.knowledge_filename,
+        }];
+      });
       const completed = item.is_completed !== false;
       if (!completed) incompleteId = item.id;
       messages.push({
@@ -404,7 +443,7 @@ useEffect(() => {
       },
       onReferences: (refs) => {
         setAssistantState('organizing');
-        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, references: refs.map((ref) => ({ title: ref.title, detail: ref.content })) } : message) }));
+        updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, references: refs } : message) }));
       },
       onGatewayAudit: (audit) => {
         patchMessage({ gatewayAudit: { verdict: audit.verdict, message: audit.message } });
@@ -656,7 +695,7 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
               {message.role === 'ai' && message.startedAt && (message.streaming || (message.timeline?.length ?? 0) > 0) && (
                 <ThinkingPanel events={message.timeline ?? []} startedAt={message.startedAt} endedAt={message.endedAt} />
               )}
-              {message.content && <div className="ai-message-content">{message.role === 'ai' ? <MarkdownView source={message.content} /> : message.content}</div>}
+              {message.content && <div className="ai-message-content">{message.role === 'ai' ? <MarkdownView source={message.content} onCitationClick={(info) => { setExpandedRefKey(null); setRefDrawer({ open: true, refs: message.references ?? [], highlight: info }); }} /> : message.content}</div>}
               {message.attachments && message.attachments.length > 0 && <div className="ai-message-attachments">{message.attachments.map((file) => <Tag key={file.id} icon={<PaperClipOutlined />}>{file.name}</Tag>)}</div>}
               {message.source && !message.streaming && <div className="ai-source-badge"><span className={`ai-source-dot ai-source-dot-${message.source}`} />{message.source === 'rag' ? 'RAG 在线回答' : '本地演示引擎'}</div>}
               {message.gatewayAudit && !message.streaming && <div className={`ai-gateway-audit ai-gateway-audit-${message.gatewayAudit.verdict}`}>{message.gatewayAudit.verdict === 'pass' ? '✓ ' : '⚠ '}{message.gatewayAudit.message}</div>}
@@ -677,7 +716,7 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
                 anchor.click();
                 URL.revokeObjectURL(url);
               }} />}
-              {message.references && message.references.length > 0 && !message.streaming && <div className="ai-reference-row"><span className="ai-reference-label">引用 {message.references.length}</span>{message.references.map((reference) => <Tag key={reference.title} className="ai-ref-chip" onClick={() => setRefDrawer({ open: true, refs: message.references ?? [] })}><span className="ai-ref-icon">📄</span>{reference.title}</Tag>)}</div>}
+              {message.references && message.references.length > 0 && !message.streaming && <div className="ai-reference-row"><span className="ai-reference-label">引用 {message.references.length}</span>{message.references.map((reference) => <Tag key={reference.title} className="ai-ref-chip" onClick={() => { setExpandedRefKey(null); setRefDrawer({ open: true, refs: message.references ?? [], highlight: { doc: reference.title, chunkId: reference.chunkId } }); }}><span className="ai-ref-icon">📄</span>{reference.title}</Tag>)}</div>}
             </div>
           </div>)}
           <div ref={bottomRef} />
@@ -706,8 +745,33 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
         </section>
       </main>
 
-      <Drawer title={`引用来源（${refDrawer.refs.length}）`} open={refDrawer.open} onClose={() => setRefDrawer({ open: false, refs: [] })} width={460}>
-        {refDrawer.refs.length === 0 ? <Empty description="暂无引用" /> : refDrawer.refs.map((reference, index) => <div className="reference-card" key={`${reference.title}-${index}`}><strong>{index + 1}. {reference.title}</strong><p>{reference.detail === '知识库内联引用' ? '该回答内联引用了此文档。' : reference.detail}</p></div>)}
+      <Drawer title={`文档来源 · ${refDrawer.refs.length}`} open={refDrawer.open} onClose={() => setRefDrawer({ open: false, refs: [] })} width={460}>
+        {refDrawer.refs.length === 0 ? (
+          <Empty description="暂无引用" />
+        ) : (
+          refDrawer.refs.map((reference, index) => {
+            const key = referenceCardKey(reference, index);
+            const expanded = expandedRefKey === key;
+            const highlighted = matchHighlight(reference, refDrawer.highlight);
+            return (
+              <div
+                key={key}
+                className={`reference-card${expanded ? ' reference-card--expanded' : ''}${highlighted ? ' reference-card--highlight' : ''}`}
+                onClick={() => setExpandedRefKey(expanded ? null : key)}
+              >
+                <div className="reference-card__head">
+                  <span className="reference-card__title">📄 {reference.title}</span>
+                  <span className={`reference-card__chevron${expanded ? ' is-open' : ''}`}>›</span>
+                </div>
+                <p className={`reference-card__summary${expanded ? ' is-expanded' : ''}`}>
+                  {reference.content === '知识库内联引用'
+                    ? '该回答内联引用了此文档。'
+                    : reference.content}
+                </p>
+              </div>
+            );
+          })
+        )}
       </Drawer>
     </div>
   );

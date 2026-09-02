@@ -6,6 +6,12 @@ import { gatewayHeaders } from '../config/gateway-auth';
 export interface RagReference {
   title: string;
   content: string;
+  /** 引用定位字段（点击徽章高亮定位用，对齐 WeKnora KnowledgeReferenceLike） */
+  chunkId?: string;
+  knowledgeId?: string;
+  knowledgeBaseId?: string;
+  chunkIndex?: number;
+  filename?: string;
 }
 
 export interface RagStreamEvents {
@@ -153,7 +159,19 @@ function extractReferences(payload: ChatResponseEvent): RagReference[] | null {
       const title = String(item.knowledge_title ?? item.knowledge_filename ?? item.title ?? '知识库引用');
       const content = String(item.content ?? item.chunk_text ?? item.text ?? '');
       const score = typeof item.score === 'number' ? item.score : null;
-      return { title, content: score !== null ? `${content}（相关度 ${score.toFixed(2)}）` : content };
+      return {
+        title,
+        content: score !== null ? `${content}（相关度 ${score.toFixed(2)}）` : content,
+        chunkId: item.chunk_id !== undefined && item.chunk_id !== null ? String(item.chunk_id) : undefined,
+        knowledgeId:
+          item.knowledge_id !== undefined && item.knowledge_id !== null ? String(item.knowledge_id) : undefined,
+        knowledgeBaseId:
+          item.knowledge_base_id !== undefined && item.knowledge_base_id !== null
+            ? String(item.knowledge_base_id)
+            : undefined,
+        chunkIndex: typeof item.chunk_index === 'number' ? item.chunk_index : undefined,
+        filename: item.knowledge_filename !== undefined ? String(item.knowledge_filename) : undefined,
+      };
     })
     .filter((r) => r.title || r.content);
 }
@@ -288,19 +306,46 @@ export async function streamKnowledgeChat(
 interface InlineRefCollector {
   refs: RagReference[];
   seen: Set<string>;
+  /** 跨 SSE 增量的未闭合 <kb 标签残尾缓冲 */
+  tagBuffer: string;
 }
 
-/** 剥离 <kb ... /> 内联引用占位符，并收集 doc 名（去重） */
-function stripInlineKbTags(content: string, collector: InlineRefCollector): string {
+/** <kb ... /> 内联引用占位符 → 可点击徽章 HTML（react-markdown rehype-raw 渲染），
+ *  同时收集引用全字段（去重按 doc 名）。对齐 WeKnora preprocessCitationTags。 */
+function renderInlineKbTags(content: string, collector: InlineRefCollector): string {
   return content.replace(/<kb\b[^>]*?\/?>/gi, (tag) => {
-    const docMatch = tag.match(/doc="([^"]*)"/);
-    const doc = docMatch ? docMatch[1] : '';
+    const doc = tag.match(/doc="([^"]*)"/)?.[1] ?? '';
+    const chunkId = tag.match(/chunk_id="([^"]*)"/)?.[1];
+    const kbId = tag.match(/kb_id="([^"]*)"/)?.[1];
     if (doc && !collector.seen.has(doc)) {
       collector.seen.add(doc);
-      collector.refs.push({ title: doc, content: '知识库内联引用' });
+      collector.refs.push({
+        title: doc,
+        content: '知识库内联引用',
+        chunkId: chunkId || undefined,
+        knowledgeId: kbId || undefined,
+      });
     }
-    return '';
+    const safeDoc = doc.replace(/"/g, '&quot;');
+    return `<span class="citation-badge" data-doc="${safeDoc}"${chunkId ? ` data-chunk-id="${chunkId}"` : ''}${kbId ? ` data-kb-id="${kbId}"` : ''}>📄 ${safeDoc}</span>`;
   });
+}
+
+/**
+ * 剥离 answer 增量中的 <kb> 标签并转徽章。标签可能跨 SSE 增量断裂
+ * （前一块以 `<kb doc="x"` 结尾、闭合在下一块），未闭合残尾缓存在
+ * collector.tagBuffer 里拼到下一增量前面；流自然结束时残尾为不完整标签，安全丢弃。
+ */
+function stripInlineKbTags(delta: string, collector: InlineRefCollector): string {
+  const content = collector.tagBuffer + delta;
+  collector.tagBuffer = '';
+  // 末尾未闭合的 <kb 残尾（其后无 >）→ 留到下一增量
+  const lastOpen = content.lastIndexOf('<kb');
+  if (lastOpen >= 0 && !content.slice(lastOpen).includes('>')) {
+    collector.tagBuffer = content.slice(lastOpen);
+    return renderInlineKbTags(content.slice(0, lastOpen), collector);
+  }
+  return renderInlineKbTags(content, collector);
 }
 
 function handleEvent(ev: SseEvent, events: RagStreamEvents, inlineRefs: InlineRefCollector) {
@@ -416,7 +461,7 @@ async function consumeSseStream(body: ReadableStream<Uint8Array>, events: RagStr
   const reader = body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
-  const inlineRefs: InlineRefCollector = { refs: [], seen: new Set() };
+  const inlineRefs: InlineRefCollector = { refs: [], seen: new Set(), tagBuffer: '' };
 
   const dispatch = (chunk: string) => {
     for (const ev of parseSseChunk(chunk)) {

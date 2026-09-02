@@ -1,12 +1,13 @@
 import MOCK_DATA from '../data';
 import { defaultFactors, simulate } from './decision-engine';
 import type { ProjectLike } from './decision-engine';
+import type { RagReference } from '../services/rag';
 
 /** 本地规则回答引擎：模拟 RAG 问答（WeKnora 接入前） */
 
 export interface AiAnswer {
   text: string;
-  references: { title: string; detail: string }[];
+  references: RagReference[];
 }
 
 const projects = MOCK_DATA.projects as (ProjectLike & { shortName: string; name: string })[];
@@ -117,8 +118,8 @@ export function generateAnswer(question: string): AiAnswer {
     return {
       text: lines.join('\n'),
       references: [
-        { title: '三算对比表（合计）', detail: '目标利润率 ' + total?.profitRate + '%，实际 ' + total?.actualRate + '%' },
-        { title: '现金流敏感性分析', detail: cash.sensitivity.map((s) => s.scenario + '：' + s.junForecast + ' 万').join('；') },
+        { title: '三算对比表（合计）', content: '目标利润率 ' + total?.profitRate + '%，实际 ' + total?.actualRate + '%' },
+        { title: '现金流敏感性分析', content: cash.sensitivity.map((s) => s.scenario + '：' + s.junForecast + ' 万').join('；') },
       ],
     };
   }
@@ -139,8 +140,8 @@ export function generateAnswer(question: string): AiAnswer {
     return {
       text: lines.join('\n'),
       references: [
-        { title: '动态现金流 · 月度明细', detail: '6 月预测结余 ' + junBalance + ' 万，临界 ' + cash.criticalBalance + ' 万' },
-        { title: '敏感性分析', detail: cash.sensitivity.map((s) => s.scenario + '：' + s.junForecast + ' 万').join('；') },
+        { title: '动态现金流 · 月度明细', content: '6 月预测结余 ' + junBalance + ' 万，临界 ' + cash.criticalBalance + ' 万' },
+        { title: '敏感性分析', content: cash.sensitivity.map((s) => s.scenario + '：' + s.junForecast + ' 万').join('；') },
       ],
     };
   }
@@ -161,7 +162,7 @@ export function generateAnswer(question: string): AiAnswer {
     lines.push('建议：对低分项目启动分包限额审批与三算对比复盘。');
     return {
       text: lines.join('\n'),
-      references: [{ title: '四地块每周排名', detail: ranking.week + ' · 成本维度得分' }],
+      references: [{ title: '四地块每周排名', content: ranking.week + ' · 成本维度得分' }],
     };
   }
 
@@ -181,7 +182,7 @@ export function generateAnswer(question: string): AiAnswer {
     lines.push('结论：筏板/侧墙工程量增加与 HRB400 钢筋超预算 7.8% 是主因，已触发红线预警（16.66%），需商务 48h 内完成复核并锁定集采价。');
     return {
       text: lines.join('\n'),
-      references: [{ title: '三算对比表 · 地下室', detail: '目标利润率 23.17% → 实际 19.24%（-3.93 pct）' }],
+      references: [{ title: '三算对比表 · 地下室', content: '目标利润率 23.17% → 实际 19.24%（-3.93 pct）' }],
     };
   }
 
@@ -203,7 +204,7 @@ export function generateAnswer(question: string): AiAnswer {
     lines.push('相关：利润率 =（中标合同价 − 目标成本）/ 中标合同价。');
     return {
       text: lines.join('\n'),
-      references: [{ title: '三算对比表（合计）', detail: '目标 ' + total?.profitRate + '% / 实际 ' + total?.actualRate + '%' }],
+      references: [{ title: '三算对比表（合计）', content: '目标 ' + total?.profitRate + '% / 实际 ' + total?.actualRate + '%' }],
     };
   }
 
