@@ -2,8 +2,9 @@ import { marked } from 'marked';
 import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
-import { memo, useEffect, useRef, useMemo } from 'react';
+import { memo, useEffect, useRef, useMemo, useState } from 'react';
 import { renderMermaidToSvg } from './Mermaid';
+import { fetchChunkContent } from '../services/rag';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github.css';
 
@@ -182,26 +183,86 @@ function MarkdownViewInner({
   const onCitationRef = useRef(onCitationClick);
   onCitationRef.current = onCitationClick;
 
+  // —— 引用徽章 hover 浮层（对齐 WeKnora useChatCitationPopover：80ms 延迟 + chunk 原文预览）——
+  const [float, setFloat] = useState<{ doc: string; content: string | null; loading: boolean; x: number; y: number } | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+
+  const clearTimers = () => {
+    if (hoverTimerRef.current !== null) { window.clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    if (closeTimerRef.current !== null) { window.clearTimeout(closeTimerRef.current); closeTimerRef.current = null; }
+  };
+
+  useEffect(() => clearTimers, []);
+
+  const handleBadgeEnter = (badge: HTMLElement) => {
+    clearTimers();
+    const chunkId = badge.getAttribute('data-chunk-id') ?? '';
+    const doc = badge.getAttribute('data-doc') ?? '';
+    if (!chunkId) return; // 无 chunk 定位的徽章只支持点击开抽屉
+    hoverTimerRef.current = window.setTimeout(() => {
+      const rect = badge.getBoundingClientRect();
+      // 默认下方 8px；视口下方放不下改上方
+      const below = rect.bottom + 8;
+      const floatH = 220;
+      const y = below + floatH > window.innerHeight ? Math.max(8, rect.top - floatH - 8) : below;
+      const x = Math.min(rect.left, window.innerWidth - 400);
+      setFloat({ doc, content: null, loading: true, x, y });
+      void fetchChunkContent(chunkId).then((content) => {
+        setFloat((cur) => (cur && cur.doc === doc ? { ...cur, content, loading: false } : cur));
+      });
+    }, 80);
+  };
+
+  const handleBadgeLeave = () => {
+    if (hoverTimerRef.current !== null) { window.clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    closeTimerRef.current = window.setTimeout(() => setFloat(null), 120);
+  };
+
   useEffect(() => {
     void renderMermaidSlots(containerRef.current);
   }, [html]);
 
   return (
-    <div
-      ref={containerRef}
-      className="md-body"
-      onClick={(e) => {
-        const badge = (e.target as HTMLElement).closest?.('.citation-badge');
-        if (badge) {
-          onCitationRef.current?.({
-            doc: badge.getAttribute('data-doc') ?? '',
-            chunkId: badge.getAttribute('data-chunk-id') ?? undefined,
-            kbId: badge.getAttribute('data-kb-id') ?? undefined,
-          });
-        }
-      }}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className="md-body"
+        onMouseOver={(e) => {
+          const badge = (e.target as HTMLElement).closest?.('.citation-badge');
+          if (badge) handleBadgeEnter(badge as HTMLElement);
+        }}
+        onMouseOut={(e) => {
+          if ((e.target as HTMLElement).closest?.('.citation-badge')) handleBadgeLeave();
+        }}
+        onClick={(e) => {
+          const badge = (e.target as HTMLElement).closest?.('.citation-badge');
+          if (badge) {
+            clearTimers();
+            setFloat(null);
+            onCitationRef.current?.({
+              doc: badge.getAttribute('data-doc') ?? '',
+              chunkId: badge.getAttribute('data-chunk-id') ?? undefined,
+              kbId: badge.getAttribute('data-kb-id') ?? undefined,
+            });
+          }
+        }}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {float && (
+        <div
+          className="citation-float"
+          style={{ left: float.x, top: float.y }}
+          onMouseEnter={clearTimers}
+          onMouseLeave={handleBadgeLeave}
+        >
+          <div className="citation-float__title">📄 {float.doc}</div>
+          <div className="citation-float__body">
+            {float.loading ? '加载原文…' : float.content ?? '无法加载该片段原文'}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

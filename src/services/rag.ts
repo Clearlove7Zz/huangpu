@@ -577,3 +577,29 @@ export async function listRemoteMessages(sessionId: string, beforeTime?: string,
   }
 }
 
+
+// —— 引用徽章 hover 浮层：chunk 原文拉取（对齐 WeKnora citationChunkCache）——
+
+/** chunk 原文缓存（会话级；chunk 内容服务端少变，无需失效策略） */
+const chunkContentCache = new Map<string, string>();
+
+/**
+ * 拉取 chunk 原文（GET /chunks/by-id/{id}，WeKnora 原生端点）。
+ * 未命中缓存时请求；失败/无内容返回 null（浮层显示"无法加载"兜底）。
+ */
+export async function fetchChunkContent(chunkId: string): Promise<string | null> {
+  if (!chunkId || !ragReady()) return null;
+  const cached = chunkContentCache.get(chunkId);
+  if (cached !== undefined) return cached;
+  try {
+    const res = await fetch(`${RAG_CONFIG.baseUrl}/chunks/by-id/${encodeURIComponent(chunkId)}`, { headers: gatewayHeaders() });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { data?: { content?: unknown }; content?: unknown };
+    const content = String(json?.data?.content ?? json?.content ?? '');
+    if (!content) return null;
+    chunkContentCache.set(chunkId, content);
+    return content;
+  } catch {
+    return null;
+  }
+}
