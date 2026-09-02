@@ -16,7 +16,7 @@ import AssistantLogo from '../components/AssistantLogo';
 import MarkdownView from '../components/MarkdownView';
 import ThinkingPanel, { type TimelineEvent } from '../components/ThinkingPanel';
 import type { AiAnswer } from '../utils/answer-engine';
-import { continueKnowledgeStream, deleteRemoteSession, listRemoteMessages } from '../services/rag';
+import { continueKnowledgeStream, deleteRemoteSession, listRemoteMessages, renderInlineKbTags } from '../services/rag';
 import type { RagReference, RagStreamEvents, RemoteMessage } from '../services/rag';
 import type { CitationInfo } from '../components/MarkdownView';
 import type { ChatCallbacks } from '../services/chat-service';
@@ -203,6 +203,9 @@ useEffect(() => {
         timeline.push({ kind: 'thinking', id: `history-thinking-${messages.length}`, content: thinkMatch[1].trim(), pending: false, seq: 0 });
         content = content.slice(thinkMatch[0].length).trim();
       }
+      // 服务端存储的是原始 <kb/> 标签：转成可点击徽章 HTML（否则 react-markdown
+      // 会把标签解析为 HTML 块吞掉后续正文，表现为"刷新后回答断流"）
+      content = renderInlineKbTags(content).replace(/<kb\b[^>]*$/i, '');
       const references = (item.knowledge_references ?? []).flatMap((ref): RagReference[] => {
         const r = ref as {
           knowledge_title?: string;

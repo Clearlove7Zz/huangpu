@@ -310,14 +310,15 @@ interface InlineRefCollector {
   tagBuffer: string;
 }
 
-/** <kb ... /> 内联引用占位符 → 可点击徽章 HTML（react-markdown rehype-raw 渲染），
- *  同时收集引用全字段（去重按 doc 名）。对齐 WeKnora preprocessCitationTags。 */
-function renderInlineKbTags(content: string, collector: InlineRefCollector): string {
+/** <kb ... /> 内联引用占位符 → 可点击徽章 HTML（react-markdown rehype-raw 渲染）。
+ *  历史消息加载时必须调用：原始 <kb/> 标签留在 markdown 里会被解析为
+ *  HTML 块并吞掉后续正文（表现为"刷新后回答断流"）。对齐 WeKnora preprocessCitationTags。 */
+export function renderInlineKbTags(content: string, collector?: InlineRefCollector): string {
   return content.replace(/<kb\b[^>]*?\/?>/gi, (tag) => {
     const doc = tag.match(/doc="([^"]*)"/)?.[1] ?? '';
     const chunkId = tag.match(/chunk_id="([^"]*)"/)?.[1];
     const kbId = tag.match(/kb_id="([^"]*)"/)?.[1];
-    if (doc && !collector.seen.has(doc)) {
+    if (collector && doc && !collector.seen.has(doc)) {
       collector.seen.add(doc);
       collector.refs.push({
         title: doc,
