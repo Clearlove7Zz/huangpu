@@ -2,12 +2,13 @@
  * 推演引擎（确定性利润计算）——从 huangpu-react/src/utils/decision-engine.ts 移植的纯逻辑部分。
  * 数值口径铁律：函数体与 TS 版逐行一致（含 toFixed/舍入），保证网关对账"逐位一致"的基准
  * 与前端本地引擎、demo decision-engine.js v2.2 完全相同。DOM/图表渲染部分不移植。
+ * 2026-09 RAG 供数架构（C 路线）：simulate 新增可选第三参 globals（AI 从原始资料检索的全局
+ * 常量），缺省时行为与 TS 版逐位一致（用 engine-data 内置常量），既有调用方零改动。
  */
 
-import { CASHFLOW_JUN, CRITICAL_BALANCE, PROFIT_RED_LINE } from './engine-data.mjs';
+import { CASHFLOW_JUN, CRITICAL_BALANCE, PROFIT_RED_LINE, STEEL_SHARE } from './engine-data.mjs';
 
-/** 钢筋成本份额（引擎口径：钢筋目标成本 = 目标成本 × 18%，与 KB 文档、对账白名单同源） */
-export const STEEL_SHARE = 0.18;
+export { STEEL_SHARE };
 
 export const FACTORS = [
   { id: 'steelPrice', label: '钢筋单价', unit: '%', min: -10, max: 15, step: 0.5, default: 0, impactWeight: 1.2 },
@@ -51,8 +52,12 @@ export function getBaseline(project) {
   };
 }
 
-export function simulate(project, factors) {
+export function simulate(project, factors, globals = null) {
   const base = getBaseline(project);
+  if (globals?.cashflowJunWan != null) base.cashflowJun = globals.cashflowJunWan;
+  const redLine = globals?.profitRedLine ?? PROFIT_RED_LINE;
+  const criticalBalance = globals?.criticalBalanceWan ?? CRITICAL_BALANCE;
+  const steelShare = globals?.steelShare ?? STEEL_SHARE;
   const bidWan = base.bidYi * 10000;
   let costDeltaWan = 0;
   let progressDelta = 0;
@@ -65,7 +70,7 @@ export function simulate(project, factors) {
 
   const steel = factors.steelPrice || 0;
   if (steel !== 0) {
-    const steelCostShare = base.targetYi * STEEL_SHARE * 10000;
+    const steelCostShare = base.targetYi * steelShare * 10000;
     const d = steelCostShare * (steel / 100);
     costDeltaWan += d;
     breakdown.push({ factor: '钢筋单价', delta: d, unit: '万' });
@@ -152,8 +157,8 @@ export function simulate(project, factors) {
     },
     breakdown,
     factors: { ...defaultFactors(), ...factors },
-    belowRedLine: newProfitRate < PROFIT_RED_LINE,
-    criticalCashflow: base.cashflowJun + cashflowDelta < CRITICAL_BALANCE,
+    belowRedLine: newProfitRate < redLine,
+    criticalCashflow: base.cashflowJun + cashflowDelta < criticalBalance,
   };
 }
 

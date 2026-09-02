@@ -17,6 +17,9 @@ export const CASHFLOW_JUN = 420;
 /** 现金流临界预警线（cost-data.ts cashflowDetail.criticalBalance） */
 export const CRITICAL_BALANCE = 200;
 
+/** 钢筋成本份额（引擎口径：钢筋目标成本 = 目标成本 × 18%，与 KB 文档同源） */
+export const STEEL_SHARE = 0.18;
+
 /**
  * 四地块项目数据（仅保留引擎与对账所需字段；
  * 来源 mock-data.ts projects，删除了 area/startDate/output 等无关字段）。

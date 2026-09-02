@@ -1,38 +1,61 @@
 /**
- * 利润推演引擎 MCP 服务（PRD 附录 D：decision-engine 4 函数注册为 WeKnora MCP 工具）。
+ * 利润推演引擎 MCP 服务 v2（RAG 供数 · C 路线"问时现抽"，负责人决策 2026-09-02）。
  *
- * - 架构约束 AD-09：引擎走 MCP 工具，Agent 按需调用，不内嵌网关。
- *   本进程独立于网关；算法直接 import ../lib/engine.mjs（与网关兜底/前端本地引擎同源，零漂移）。
- * - transport：streamable HTTP（WeKnora MCP client 禁用 stdio，internal/mcp/client.go）。
- * - 自鉴权（AD-08 "MCP 自鉴权"）：所有 /mcp 请求校验 X-API-Key。
- * - 部署：bind 0.0.0.0，WeKnora 容器经 host.docker.internal 访问。
+ * 数据流：agent 从「项目原始资料」等多源文档（合同摘要/成本月报/综合月报/制度/资金计划）
+ *        现场检索基线与全局常量 → 调 run_scenario(baseline, globals, project, factors)
+ *        → 引擎确定性计算 → 结果回灌 agent 总结。
+ *
+ * - AD-09：引擎走 MCP 工具，不内嵌网关；算法 import ../lib/engine.mjs（单源零漂移）。
+ * - v2 签名（与 PRD 附录 D 的偏离系负责人架构决策）：baseline/globals 全必填——缺字段由
+ *   zod schema 硬拒绝，模型必须回文档补检索；这是"问时现抽"架构下防"静默编数"的主保险。
+ *   内置常量（engine-data）不再作为计算输入，仅存于网关兜底路径。
+ * - transport：streamable HTTP（WeKnora MCP client 禁用 stdio）；自鉴权 X-API-Key（AD-08）。
  */
 
 import { createServer } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { PROJECTS, PROFIT_RED_LINE } from '../lib/engine-data.mjs';
-import { simulate, getBaseline, getCurrentStatusByType, PRESETS, SIM_TYPES } from '../lib/engine.mjs';
+import { PROJECTS } from '../lib/engine-data.mjs';
+import { simulate, PRESETS, SIM_TYPES } from '../lib/engine.mjs';
 
 const PORT = Number(process.env.MCP_PORT || 18095);
 const MCP_API_KEY = process.env.MCP_API_KEY || 'hp-engine-mcp-demo-key';
 
-/** 宽松解析地块：接受 id / 短名 / 全名子串（模型侧给 id 或中文名都行） */
-function resolveProject(q) {
+/** 宽松解析地块元信息（仅用于结果标注 id/shortName，计算输入全部来自调用方 baseline） */
+function resolveProjectMeta(q) {
   const s = String(q ?? '').trim();
   if (!s) return null;
-  return (
+  const p =
     PROJECTS.find((p) => p.id === s) ??
     PROJECTS.find((p) => p.shortName === s) ??
-    PROJECTS.find((p) => p.name === s || p.name.includes(s) || s.includes(p.shortName)) ??
-    null
-  );
+    PROJECTS.find((p) => p.name === s || p.name.includes(s) || s.includes(p.shortName));
+  return p ? { id: p.id, name: p.name, shortName: p.shortName } : { id: s, name: s, shortName: s };
 }
 
 function projectHint() {
   return PROJECTS.map((p) => `${p.id}(${p.shortName})`).join('、');
 }
+
+const baselineShape = {
+  bid_price_yi: z.number().positive().describe('中标合同价（亿）——出自合同/中标材料'),
+  target_cost_yi: z.number().positive().describe('目标成本（亿）——出自成本测算/月报'),
+  actual_cost_yi: z.number().positive().describe('累计实际成本（亿）——出自成本月报'),
+  profit_rate: z.number().min(0).max(100).describe('当前实际利润率（%）——出自成本月报'),
+  payment_rate: z.number().min(0).max(100).describe('回款率（%）——出自商务/综合月报'),
+  progress: z.number().min(0).max(100).describe('形象进度（%）——出自监理/综合月报'),
+  cost_completion: z.number().min(0).max(100).describe('成本完成度（%）——出自成本月报'),
+  lag_nodes: z.number().int().min(0).describe('滞后节点数（个）——出自监理/综合月报'),
+  risk_total: z.number().int().min(0).describe('风险总数（个）——出自风险台账/综合月报'),
+  risk_red: z.number().int().min(0).describe('红色风险数（个）——出自风险台账/综合月报'),
+  cashflow_jun_wan: z.number().describe('本期现金流结余（万）——出自资金计划'),
+};
+
+const globalsShape = {
+  profit_red_line: z.number().min(0).max(100).describe('目标利润率红线（%）——出自管理办法'),
+  critical_balance_wan: z.number().min(0).describe('现金流临界预警线（万）——出自资金管理办法'),
+  steel_share_pct: z.number().min(0).max(100).describe('钢筋成本份额（%）——出自成本管理制度'),
+};
 
 const factorShape = {
   steel_price: z.number().min(-10).max(15).optional().describe('钢筋单价波动 %（-10~15，正=涨价），默认 0'),
@@ -58,7 +81,7 @@ function json(result) {
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
 
-const server = new McpServer({ name: 'profit-engine', version: '1.0.0' });
+const server = new McpServer({ name: 'profit-engine', version: '2.0.0' });
 
 server.registerTool(
   'run_scenario',
@@ -66,52 +89,49 @@ server.registerTool(
     title: '利润情景推演',
     description:
       '对指定地块执行确定性利润推演（数值铁律：利润数字必须由本引擎计算，模型不得自行推算）。' +
-      `可选地块：${projectHint()}。返回基线与推演后的利润率、现金流、进度及扰动明细。` +
-      '基线数据（利润率/成本/合同价/份额）由引擎内置维护并随台账期次更新，调用前无需检索知识库获取基线数值；' +
-      '本工具只接收问题中的情景扰动因子（如钢筋涨价 X%、延误 X 天），未提到的因子保持 0。',
+      'baseline 与 globals 的每一个字段都必须从知识库原始材料（合同摘要/成本月报/综合月报/资金计划/管理制度）' +
+      '检索取得，不得凭记忆或估算填写；任一字段缺失本工具会直接拒绝并列出缺失清单，届时请回知识库补检索。' +
+      `project 可填：${projectHint()}。返回基线与推演后的利润率、现金流、进度及扰动明细。`,
     inputSchema: {
       project: z.string().describe(`地块 ID 或名称，如：${projectHint()}`),
+      baseline: z.object(baselineShape).describe('基线 11 项——从原始材料逐项检索取得'),
+      globals: z.object(globalsShape).describe('全局常量 3 项——从管理制度/资金办法检索取得'),
+      period: z.string().optional().describe('数据所属期次（如 2026-06），取自材料时填写，用于结果标注'),
+      top_overruns: z.array(z.string()).optional().describe('超支分项列表（可选，出自成本月报）'),
       ...factorShape,
     },
   },
-  async (args) => {
-    const p = resolveProject(args.project);
-    if (!p) return { content: [{ type: 'text', text: `未识别地块「${args.project}」，可用：${projectHint()}` }], isError: true };
-    return json({ project: { id: p.id, name: p.name, shortName: p.shortName }, result: simulate(p, toFactors(args)) });
-  }
-);
-
-server.registerTool(
-  'get_baseline',
-  {
-    title: '地块基线指标',
-    description:
-      `获取指定地块当前基线（实际利润率、中标合同价、目标成本、回款率等）。可选地块：${projectHint()}。` +
-      `目标利润率红线 ${PROFIT_RED_LINE}%。需要基线数值时优先调用本工具，而非检索知识库（引擎数值随台账期次更新，最权威）。`,
-    inputSchema: { project: z.string().describe(`地块 ID 或名称，如：${projectHint()}`) },
-  },
-  async (args) => {
-    const p = resolveProject(args.project);
-    if (!p) return { content: [{ type: 'text', text: `未识别地块「${args.project}」，可用：${projectHint()}` }], isError: true };
-    return json({ project: { id: p.id, name: p.name, shortName: p.shortName }, baseline: getBaseline(p), profitRedLine: PROFIT_RED_LINE });
-  }
-);
-
-server.registerTool(
-  'get_current_status',
-  {
-    title: '地块现状诊断',
-    description:
-      '按推演维度给出地块现状指标与建议（overall=整体 / schedule=进度 / cost=成本，含红线预警与挣值指标）。',
-    inputSchema: {
-      project: z.string().describe(`地块 ID 或名称，如：${projectHint()}`),
-      sim_type: z.enum(['overall', 'schedule', 'cost']).optional().describe('推演维度，默认 overall'),
-    },
-  },
-  async (args) => {
-    const p = resolveProject(args.project);
-    if (!p) return { content: [{ type: 'text', text: `未识别地块「${args.project}」，可用：${projectHint()}` }], isError: true };
-    return json(getCurrentStatusByType(p, args.sim_type ?? 'overall'));
+  async (a) => {
+    const meta = resolveProjectMeta(a.project);
+    const project = {
+      id: meta.id,
+      name: meta.name,
+      shortName: meta.shortName,
+      progress: a.baseline.progress,
+      lagNodes: a.baseline.lag_nodes,
+      profitRate: a.baseline.profit_rate,
+      paymentRate: a.baseline.payment_rate,
+      costCompletion: a.baseline.cost_completion,
+      risks: { total: a.baseline.risk_total, red: a.baseline.risk_red },
+      cost: {
+        bidPrice: a.baseline.bid_price_yi,
+        targetCost: a.baseline.target_cost_yi,
+        actualCost: a.baseline.actual_cost_yi,
+        topOverruns: a.top_overruns ?? [],
+      },
+    };
+    const globals = {
+      profitRedLine: a.globals.profit_red_line,
+      criticalBalanceWan: a.globals.critical_balance_wan,
+      steelShare: a.globals.steel_share_pct / 100,
+      cashflowJunWan: a.baseline.cashflow_jun_wan,
+    };
+    const sim = simulate(project, toFactors(a), globals);
+    return json({
+      project: meta,
+      ...(a.period ? { period: a.period } : {}),
+      result: sim,
+    });
   }
 );
 
@@ -130,7 +150,7 @@ const httpServer = createServer(async (req, res) => {
 
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, service: 'profit-engine-mcp', tools: ['run_scenario', 'get_baseline', 'get_current_status', 'list_presets'] }));
+    res.end(JSON.stringify({ ok: true, service: 'profit-engine-mcp', version: '2.0.0-rag-supplied', tools: ['run_scenario', 'list_presets'] }));
     return;
   }
 
@@ -139,7 +159,7 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  // MCP 自鉴权（AD-08）：网关/WeKnora 注册时配置同一 api_key
+  // MCP 自鉴权（AD-08）：WeKnora 注册时配置同一 api_key
   if ((req.headers['x-api-key'] ?? '') !== MCP_API_KEY) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized: invalid X-API-Key' }, id: null }));
@@ -165,5 +185,6 @@ const httpServer = createServer(async (req, res) => {
 });
 
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`[engine-mcp] profit-engine MCP server on http://0.0.0.0:${PORT}/mcp (streamable HTTP, X-API-Key auth)`);
+  console.log(`[engine-mcp] profit-engine MCP server v2 on http://0.0.0.0:${PORT}/mcp (streamable HTTP, X-API-Key auth)`);
+  console.log('[engine-mcp] v2 (C 路线): baseline/globals supplied by agent from source documents; builtin constants no longer used as inputs');
 });
