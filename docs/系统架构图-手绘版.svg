@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="980" viewBox="0 0 1240 980" font-family="Segoe UI, Microsoft YaHei, sans-serif">
+  <rect width="1240" height="970" fill="#ffffff"/>
+
+  <!-- ========= 集群框 ========= -->
+  <rect x="60" y="30" width="250" height="90" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="185" y="50" text-anchor="middle" font-size="13" fill="#333">浏览器</text>
+  <rect x="40" y="160" width="780" height="600" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="430" y="182" text-anchor="middle" font-size="13" fill="#333">机器2 · 应用机</text>
+  <rect x="70" y="455" width="720" height="280" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="430" y="477" text-anchor="middle" font-size="13" fill="#333">WeKnora（Docker Compose）</text>
+  <rect x="850" y="315" width="380" height="470" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="1075" y="337" text-anchor="middle" font-size="13" fill="#333">机器1 · GPU 推理机</text>
+
+  <!-- ========= 节点 ========= -->
+  <!-- 浏览器 -->
+  <rect x="80" y="58" width="210" height="52" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="185" y="78" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">huangpu-react</text>
+  <text x="185" y="98" text-anchor="middle" font-size="12.5" fill="#000">React 19 + antd 6.6.0</text>
+
+  <!-- 后端网关 -->
+  <rect x="70" y="200" width="230" height="100" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="185" y="224" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">后端网关 :8090</text>
+  <text x="185" y="243" text-anchor="middle" font-size="12.5" fill="#000">Node 18+ 零依赖</text>
+  <text x="185" y="262" text-anchor="middle" font-size="12.5" fill="#000">认证 · 角色RBAC</text>
+  <text x="185" y="281" text-anchor="middle" font-size="12.5" fill="#000">输出对账 · 审计</text>
+
+  <!-- 推演引擎 MCP -->
+  <rect x="480" y="200" width="300" height="95" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="630" y="226" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">推演引擎 MCP :18095</text>
+  <text x="630" y="245" text-anchor="middle" font-size="12.5" fill="#000">MCP Streamable HTTP</text>
+  <text x="630" y="264" text-anchor="middle" font-size="12.5" fill="#000">算法单源 engine.mjs</text>
+
+  <!-- 沙箱 -->
+  <rect x="480" y="325" width="300" height="100" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="630" y="349" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">沙箱 · Cube</text>
+  <text x="630" y="368" text-anchor="middle" font-size="12.5" fill="#000">Agent Skills 隔离执行</text>
+  <text x="630" y="387" text-anchor="middle" font-size="12.5" fill="#000">（演示期用 WeKnora</text>
+  <text x="630" y="406" text-anchor="middle" font-size="12.5" fill="#000">compose 沙箱服务）</text>
+
+  <!-- WeKnora app -->
+  <rect x="95" y="492" width="230" height="95" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="210" y="516" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">WeKnora app :8080</text>
+  <text x="210" y="535" text-anchor="middle" font-size="12.5" fill="#000">Go 1.26 + gin</text>
+  <text x="210" y="554" text-anchor="middle" font-size="12.5" fill="#000">RAG 编排 · Agent 调度</text>
+
+  <!-- PostgreSQL 圆柱 -->
+  <path d="M170,625 v58 a90,13 0 0 0 180,0 v-58" fill="#ffffff" stroke="#8a8a8a"/>
+  <ellipse cx="260" cy="625" rx="90" ry="13" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="260" y="662" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">PostgreSQL 17</text>
+  <text x="260" y="680" text-anchor="middle" font-size="12.5" fill="#000">ParadeDB + pgvector</text>
+
+  <!-- Redis 圆柱 -->
+  <path d="M380,625 v58 a90,13 0 0 0 180,0 v-58" fill="#ffffff" stroke="#8a8a8a"/>
+  <ellipse cx="470" cy="625" rx="90" ry="13" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="470" y="662" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">Redis 7</text>
+  <text x="470" y="680" text-anchor="middle" font-size="12.5" fill="#000">asynq 任务队列</text>
+
+  <!-- vLLM -->
+  <rect x="940" y="345" width="270" height="90" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="1075" y="371" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">vLLM</text>
+  <text x="1075" y="390" text-anchor="middle" font-size="12.5" fill="#000">Qwen3.8-27B FP8</text>
+  <text x="1075" y="409" text-anchor="middle" font-size="12.5" fill="#000">2×RTX 6000 Ada（PP=2）</text>
+
+  <!-- bge-m3 -->
+  <rect x="940" y="465" width="270" height="70" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="1075" y="494" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">bge-m3 Embedding</text>
+  <text x="1075" y="514" text-anchor="middle" font-size="12.5" fill="#000">1024 维</text>
+
+  <!-- bge-reranker -->
+  <rect x="940" y="565" width="270" height="70" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="1075" y="594" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">bge-reranker-v2-m3</text>
+  <text x="1075" y="614" text-anchor="middle" font-size="12.5" fill="#000">自托管 rerank 服务</text>
+
+  <!-- MinerU -->
+  <rect x="940" y="665" width="270" height="70" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
+  <text x="1075" y="694" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">MinerU 文档解析</text>
+  <text x="1075" y="714" text-anchor="middle" font-size="12.5" fill="#000">PDF / 图片结构化提取（GPU）</text>
+
+  <!-- ========= 连线（每条独立通道，零交叉） ========= -->
+  <g fill="none" stroke="#595959" stroke-width="1.3">
+    <!-- 浏览器 → 网关 -->
+    <path d="M185,110 L185,197"/>
+    <!-- 网关 → WeKnora app -->
+    <path d="M185,300 L185,489"/>
+    <!-- app 顶部 → MCP（垂直上行，不与任何线相交） -->
+    <path d="M310,492 L310,247 L477,247"/>
+    <!-- app 右侧 → 沙箱（右-上-右） -->
+    <path d="M325,505 L450,505 L450,375 L477,375"/>
+    <!-- app → 机器1 总线：框已对齐干线高度，一条直线直达，竖干 2 上 2 下 -->
+    <path d="M325,540 H910"/>
+    <path d="M910,390 V700"/>
+    <path d="M910,390 H938"/>
+    <path d="M910,500 H938"/>
+    <path d="M910,600 H938"/>
+    <path d="M910,700 H938"/>
+    <!-- app → PostgreSQL / Redis -->
+    <path d="M230,587 L230,609"/>
+    <path d="M280,587 L280,603 H470 L470,609"/>
+  </g>
+
+  <!-- ========= 边标签 ========= -->
+  <text x="193" y="162" font-size="12" fill="#595959">HMAC 令牌</text>
+  <text x="193" y="402" font-size="12" fill="#595959">注入 X-API-Key</text>
+  <text x="322" y="320" font-size="12" fill="#595959">MCP http-streamable</text>
+  <text x="462" y="490" font-size="12" fill="#595959">Skills 隔离执行</text>
+  <text x="560" y="528" font-size="12" fill="#595959">模型推理调用</text>
+  <!-- ========= 箭头（显式三角形，不依赖 marker） ========= -->
+  <g fill="#595959">
+    <polygon points="185,197 181,189 189,189"/>
+    <polygon points="185,489 181,481 189,481"/>
+    <polygon points="477,247 469,243 469,251"/>
+    <polygon points="477,375 469,371 469,379"/>
+    <polygon points="938,390 930,386 930,394"/>
+    <polygon points="938,500 930,496 930,504"/>
+    <polygon points="938,600 930,596 930,604"/>
+    <polygon points="938,700 930,696 930,704"/>
+  </g>
+</svg>

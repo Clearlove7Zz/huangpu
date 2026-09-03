@@ -30,3 +30,6 @@ node_modules/
 
 # ossutil 工具二进制不入库
 huangpu-sandbox/deploy/ossutil-*/
+
+# 数据库备份与回还原点（本地保留，不入库）
+/backups/
