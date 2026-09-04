@@ -33,3 +33,6 @@ huangpu-sandbox/deploy/ossutil-*/
 
 # 数据库备份与回还原点（本地保留，不入库）
 /backups/
+
+# 部署打包产物（体积大，不入库）
+/release-*/
