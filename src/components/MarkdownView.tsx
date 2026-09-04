@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import { memo, useEffect, useRef, useMemo, useState } from 'react';
 import { renderMermaidToSvg } from './Mermaid';
+import { openMermaidFullscreen } from './mermaidViewer';
 import { fetchChunkContent } from '../services/rag';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github.css';
@@ -17,7 +18,9 @@ import 'highlight.js/styles/github.css';
  * - GFM + breaks:true（单换行转 <br>，WeKnora 同款）
  * - 数学公式：marked-katex-extension（throwOnError:false + nonStandard，$$ 行内也按 display 渲染）
  * - 代码高亮：highlight.js（github 主题，仅显式语言标注才高亮）
- * - Mermaid：```mermaid 代码块输出占位槽，渲染后异步替换为 SVG
+ * - Mermaid：```mermaid 代码块输出占位槽；SVG 按"图源码"缓存于组件级 Map，
+ *   每次构建 HTML 后同步注入已缓存的 SVG（流式 tick 重建 DOM 不再闪回源码，
+ *   对齐 WeKnora #2885），缓存未命中的新图由渲染后 effect 异步补齐
  * - 引用徽章：rag.ts 注入的 <span class="citation-badge" data-*> 经事件委托点击
  * - 输出 class 与旧 react-markdown 版完全一致（.md-*），CSS/视觉零变化
  */
@@ -152,20 +155,54 @@ function renderMarkdown(src: string): string {
 }
 
 /** 渲染后异步替换 mermaid 占位槽为 SVG（失败保留源码，流式未完整语法不标 done 强求） */
-async function renderMermaidSlots(container: HTMLElement | null): Promise<void> {
+function injectCachedMermaid(html: string, cache: Map<string, string>): string {
+  if (!cache.size || !html.includes('md-mermaid-slot')) return html;
+  return html.replace(
+    /<div class="md-mermaid-slot" data-mermaid="([^"]*)">[\s\S]*?<\/div>/g,
+    (slot, encoded: string) => {
+      let chart = '';
+      try {
+        chart = decodeURIComponent(encoded);
+      } catch {
+        return slot;
+      }
+      const svg = cache.get(chart);
+      if (!svg) return slot;
+      // class/attr 与 renderMermaidSlots 成功路径一致，CSS 视觉零变化
+      return `<div class="md-mermaid-slot md-mermaid" data-mermaid="${encoded}" data-done="1">${svg}</div>`;
+    },
+  );
+}
+
+/** 找出缓存里没有的图异步渲染入缓存，完成后 bump 触发 HTML 重建注入 */
+async function renderMissingMermaid(
+  container: HTMLElement | null,
+  cache: Map<string, string>,
+  pending: Set<string>,
+  onRendered: () => void,
+): Promise<void> {
   if (!container) return;
-  const slots = container.querySelectorAll<HTMLElement>('.md-mermaid-slot:not([data-done])');
+  const slots = container.querySelectorAll<HTMLElement>('.md-mermaid-slot');
   for (const slot of Array.from(slots)) {
-    slot.setAttribute('data-done', '1');
     let chart = '';
     try {
       chart = decodeURIComponent(slot.dataset.mermaid ?? '');
-      const svg = await renderMermaidToSvg(chart);
-      slot.classList.add('md-mermaid');
-      slot.innerHTML = svg;
     } catch {
-      // 语法错误/未完整：保留 <pre> 源码展示
+      continue;
     }
+    if (!chart || cache.has(chart) || pending.has(chart)) continue;
+    pending.add(chart);
+    renderMermaidToSvg(chart)
+      .then((svg) => {
+        cache.set(chart, svg);
+        onRendered();
+      })
+      .catch(() => {
+        // 语法错误/流式未完整：不入缓存，下一 tick 自动重试（fence 闭合后即成功）
+      })
+      .finally(() => {
+        pending.delete(chart);
+      });
   }
 }
 
@@ -177,7 +214,17 @@ function MarkdownViewInner({
   streaming?: boolean;
   onCitationClick?: (info: CitationInfo) => void;
 }) {
-  const html = useMemo(() => renderMarkdown(preprocess(source)), [source]);
+  // mermaid SVG 缓存：键=图源码。流式 tick 整容器重建 innerHTML 会销毁已画好的图，
+  // 缓存在 React 树外、构建 HTML 时同步注入（对齐 WeKnora #2885），新图由 effect 补齐
+  const mermaidCacheRef = useRef(new Map<string, string>());
+  const mermaidPendingRef = useRef(new Set<string>());
+  const [mermaidVersion, bumpMermaid] = useState(0);
+
+  const html = useMemo(
+    () => injectCachedMermaid(renderMarkdown(preprocess(source)), mermaidCacheRef.current),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mermaidVersion 仅作为"缓存有新图"的重渲染信号
+    [source, mermaidVersion],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   // latest-ref：memo 跳过重渲染后点击委托依然拿到最新回调
   const onCitationRef = useRef(onCitationClick);
@@ -220,7 +267,9 @@ function MarkdownViewInner({
   };
 
   useEffect(() => {
-    void renderMermaidSlots(containerRef.current);
+    void renderMissingMermaid(containerRef.current, mermaidCacheRef.current, mermaidPendingRef.current, () =>
+      bumpMermaid((v) => v + 1),
+    );
   }, [html]);
 
   return (
@@ -236,6 +285,17 @@ function MarkdownViewInner({
           if ((e.target as HTMLElement).closest?.('.citation-badge')) handleBadgeLeave();
         }}
         onClick={(e) => {
+          // 已渲染的 mermaid 图：点击进全屏查看器（缩放/拖拽/导出，对齐 WeKnora）
+          const mermaidBlock = (e.target as HTMLElement).closest?.('.md-mermaid');
+          if (mermaidBlock) {
+            const svg = mermaidBlock.querySelector('svg');
+            if (svg) {
+              clearTimers();
+              setFloat(null);
+              openMermaidFullscreen(svg.outerHTML);
+            }
+            return;
+          }
           const badge = (e.target as HTMLElement).closest?.('.citation-badge');
           if (badge) {
             clearTimers();

@@ -108,7 +108,8 @@ export default function AppLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
 
-  const currentKey = location.pathname.slice(1) || 'dashboard';
+  // 取首段路径作菜单 key（/project/AZ-01 → 'project'），带参下钻不影响选中态
+  const currentKey = location.pathname.split('/')[1] || 'dashboard';
   const visible = useMemo(
     () => (user ? new Set(user.nav.filter((k) => ALL_KEYS.has(k))) : new Set<string>()),
     [user],

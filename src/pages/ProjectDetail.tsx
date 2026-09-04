@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Checkbox, Col, Empty, Image, Input, InputNumber, Modal, Progress, Row, Select, Space, Table, Tabs, Tag, Timeline, Typography, message } from 'antd';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button, Card, Col, Empty, Image, Input, InputNumber, Modal, Progress, Row, Select, Space, Table, Tabs, Tag, Timeline, Typography, message } from 'antd';
 import { CloudUploadOutlined, ExportOutlined, RobotOutlined } from '@ant-design/icons';
 import Chart from '../components/Chart';
 import type { EChartsOption } from 'echarts';
@@ -52,14 +53,18 @@ export default function ProjectDetail() {
     id: string; shortName: string; name: string; builder: string; contractMode: string; area: number; totalCost: number;
     progress: number; lagNodes: number; outputTotal: number; outputMonth: number; profitRate: number; paymentRate: number; costCompletion: number;
   }[];
-  const [projectId, setProjectId] = useState(projects[0].id);
+  const navigate = useNavigate();
+  const { id: routeId } = useParams();
+  // URL 参数为唯一真相源：点卡片/切下拉框都走导航，同路由仅变参数不重挂载的坑由此规避
+  const projectId = routeId && projects.some((p) => p.id === routeId) ? routeId : projects[0].id;
   const [lightbox, setLightbox] = useState<{ src: string; caption: string; group: AerialPhotoGroup; photo: string } | null>(null);
   // 数据对象与 ProjDetail 为手工对齐的形状（运行时字段齐全），TS 无法证明重叠，按其建议走 unknown 中转
   const details = MOCK_DATA.projectDetails as unknown as Record<string, ProjDetail>;
   const detail = details[projectId];
   const aerialPhotos = (MOCK_DATA.aerialPhotos as AerialPhotoGroup[]) ?? [];
   const jarvisBim = MOCK_DATA.jarvisBim as { url: string; account: string; password: string; note: string };
-  const [editable, setEditable] = useState(false);
+  // 可编辑开关已随勾选框移除：demo 的内联编辑无持久化，属脚手架，页面固定只读展示
+  const editable = false;
 
   const pieData = useMemo(
     () => (detail ? detail.outputByMajor.map((o) => ({ name: o.major, value: o.value })) : []),
@@ -141,13 +146,10 @@ export default function ProjectDetail() {
         </div>
         <Select
           value={projectId}
-          onChange={setProjectId}
+          onChange={(newId) => navigate(`/project/${newId}`)}
           style={{ width: 240 }}
           options={projects.map((p) => ({ value: p.id, label: `${p.shortName}（${p.name}）` }))}
         />
-        <Checkbox checked={editable} onChange={(e) => setEditable(e.target.checked)} style={{ marginLeft: 12 }}>
-          可编辑
-        </Checkbox>
       </div>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>

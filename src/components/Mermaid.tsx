@@ -21,6 +21,9 @@ async function getMermaid(): Promise<MermaidModule> {
         securityLevel: 'strict',
         // WeKnora 浅色主题（slate 色系）
         theme: 'base',
+        // 中文字体必须显式给：mermaid 靠临时 DOM 量文字宽度定节点大小，
+        // 默认 trebuchet ms 无中文字形 => 量窄 => foreignObject 截字（对齐 WeKnora MERMAID_CONFIG）
+        fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
         themeVariables: {
           darkMode: false,
           background: '#ffffff',
@@ -43,9 +46,20 @@ async function getMermaid(): Promise<MermaidModule> {
           edgeLabelBackground: '#ffffff',
           fontSize: '14px',
         },
-        flowchart: { useMaxWidth: true, htmlLabels: true },
+        flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis', padding: 16 },
         gantt: { useMaxWidth: true },
-        sequence: { useMaxWidth: true },
+        sequence: {
+          useMaxWidth: true,
+          diagramMarginX: 12,
+          diagramMarginY: 12,
+          actorMargin: 56,
+          width: 156,
+          height: 68,
+          boxMargin: 10,
+        },
+        // mermaid 11 对语法错误默认"成功"返回错误文案 SVG（不抛异常）——
+        // 配合 MarkdownView 的成功即缓存会把错误图钉死在屏上，必须关闭
+        suppressErrorRendering: true,
       });
       mermaidMod = mod;
       return mod;
@@ -57,6 +71,8 @@ async function getMermaid(): Promise<MermaidModule> {
 /** 渲染 mermaid 源码为 SVG 字符串；语法错误/未完整时抛出（调用方 fallback 显示源码） */
 export async function renderMermaidToSvg(chart: string): Promise<string> {
   const mermaid = (await getMermaid()).default;
+  // 语法闸：parse 不过直接抛，绝不把错误 SVG 交给上游缓存（对齐 WeKnora mermaidShared）
+  await mermaid.parse(chart);
   const { svg } = await mermaid.render(`mermaid-svg-${++renderSeq}`, chart);
   return svg;
 }

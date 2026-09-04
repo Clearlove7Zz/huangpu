@@ -23,10 +23,12 @@ import SyncLog from './pages/SyncLog';
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
+  // 按首段路径匹配（/project/AZ-01 → 'project'），否则带子路径的下钻会被误拦
+  const seg = location.pathname.split('/')[1];
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  if (user.nav && !user.nav.includes(location.pathname.slice(1))) {
+  if (user.nav && seg && !user.nav.includes(seg)) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
@@ -48,7 +50,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="ai" element={<AiAssistant />} />
-          <Route path="project" element={<ProjectDetail />} />
+          <Route path="project/:id?" element={<ProjectDetail />} />
           <Route path="decision-system" element={<DecisionSystem />} />
           <Route path="progress-system" element={<ProgressSystem />} />
           <Route path="design-control" element={<DesignControl />} />

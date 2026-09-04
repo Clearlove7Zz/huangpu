@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -93,6 +94,7 @@ function downloadCsv(filename: string, rows: string[][]) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [period, setPeriod] = useState('daily');
   const [rankDim, setRankDim] = useState('综合得分');
   const [hiddenModules, setHiddenModules] = useState<DashModuleId[]>(loadHiddenModules);
@@ -404,7 +406,7 @@ export default function Dashboard() {
                     size="small"
                     className="ds-card-line"
                     styles={{ body: { padding: 12 } }}
-                    onClick={() => (window.location.hash = '#/project')}
+                    onClick={() => navigate(`/project/${p.id}`)}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text strong style={{ color: '#1f2328' }}>{p.shortName}</Text>
