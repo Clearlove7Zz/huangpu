@@ -155,7 +155,14 @@ for (const cfg of CONFIGS) {
       chunkSize: 512,
       chunkOverlap: 80,
       separators: ['\n\n', '\n', '。', '！', '？', ';', '；'],
-      parserEngineRules: [{ engine: 'anydoc', fileTypes: ['pdf'] }, { engine: 'anydoc', fileTypes: ['docx', 'doc'] }, { engine: 'anydoc', fileTypes: ['pptx', 'ppt'] }, { engine: 'anydoc', fileTypes: ['xlsx', 'xls'] }],
+      // ⚠️ 字段名必须是 file_types（Go json tag），fileTypes 会被解析成 null 规则，
+      //    前端解析引擎页随之报"暂无可用解析引擎"
+      parserEngineRules: [
+        { engine: 'anydoc', file_types: ['pdf'] },
+        { engine: 'anydoc', file_types: ['docx', 'doc'] },
+        { engine: 'anydoc', file_types: ['pptx', 'ppt'] },
+        { engine: 'anydoc', file_types: ['xlsx', 'xls'] },
+      ],
       enableParentChild: true,
       parentChunkSize: 4096,
       childChunkSize: 384,
