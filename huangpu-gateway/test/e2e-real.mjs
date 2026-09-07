@@ -32,7 +32,6 @@ const res = await fetch(`${GW}/api/v1/agent-chat/${sid}`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', 'X-Gateway-Token': tok },
   body: JSON.stringify({ query, knowledge_base_ids: [
-    '173b5610-d346-40d3-aee0-b0ff229a673a', // test（叙事口径）
     '14bcd117-9352-42f8-a824-b47dabbb2add', // 合同资料
     'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', // 成本月报
     'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', // 综合月报
