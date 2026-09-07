@@ -147,7 +147,7 @@ mats = []
 for r in range(3, 51):
     nm, un, qty, up, amt = cell(mat_ws, r, 2), cell(mat_ws, r, 3), cell(mat_ws, r, 4), cell(mat_ws, r, 6), cell(mat_ws, r, 7)
     if isinstance(nm, str) and isinstance(amt, (int, float)):
-        mats.append((nm, un, qty, up, amt))
+        mats.append((nm, un, qty, up, amt, r))
 near(cell(mat_ws, 51, 7), 222275576.70, "材料不含税合计")
 near(sum(m[4] for m in mats), 222275576.70, "材料分项加总")
 mats.sort(key=lambda m: -m[4])
@@ -155,7 +155,7 @@ subs = []
 for r in range(3, 60):
     nm, un, qty, up, amt = cell(mat_ws, r, 13), cell(mat_ws, r, 14), cell(mat_ws, r, 15), cell(mat_ws, r, 16), cell(mat_ws, r, 17)
     if isinstance(nm, str) and isinstance(amt, (int, float)):
-        subs.append((nm, un, qty, up, amt))
+        subs.append((nm, un, qty, up, amt, r))
 subs.sort(key=lambda m: -m[4])
 ffl = {}
 for r in range(3, 49):
@@ -181,7 +181,18 @@ cats = {
     "其他合同": cell(fb, 120, 3), "待签合同额": cell(fb, 132, 3),
 }
 near(sum(cats.values()), cell(fb, 8, 3), "对下合同四分类加总")
+# 表内原值：F 列含税额、G 列占比（"对下合同计划"文档一律用表内值，不自行推导）
+cats_gross = {
+    "劳务": cell(fb, 9, 6), "专业": cell(fb, 43, 6), "材料": cell(fb, 71, 6),
+    "其他合同": cell(fb, 120, 6), "待签合同额": cell(fb, 132, 6),
+}
+cats_share = {
+    "劳务": cell(fb, 9, 7), "专业": cell(fb, 43, 7), "材料": cell(fb, 71, 7),
+    "其他合同": cell(fb, 120, 7), "待签合同额": cell(fb, 132, 7),
+}
+near(sum(cats_gross.values()), cell(fb, 8, 6), "对下合同四分类含税加总")
 DOWN_TOTAL = cell(fb, 8, 3)
+DOWN_GROSS = cell(fb, 8, 6)
 TAX_LOAD = cell(fb, 133, 5)      # 项目整体税负
 TAX_PREPAID = cell(fb, 134, 5)   # 项目整体预缴
 TAX_REMIT = cell(fb, 135, 5)     # 上缴公司税金
@@ -193,6 +204,22 @@ STEEL = cell(fb, 78, 3)          # 材料-钢材
 near(STEEL, 76834274.14, "钢材")
 STEEL_SHARE = round(STEEL / COST * 100, 2)  # 7.08
 
+# 分包计划全量行（劳务 33 + 专业 27 + 材料 48 + 其他 11 + 待签，含税/税额逐行）
+fb_sections = [
+    ("（一）劳务", 9, 43), ("（二）专业", 43, 71), ("（三）材料", 71, 120),
+    ("（四）其他合同", 120, 132), ("（五）待签合同额", 132, 133),
+]
+fb_rows_all = []
+for sec_name, r0, r1 in fb_sections:
+    rows = []
+    for r in range(r0, r1):
+        no, nm = cell(fb, r, 1), cell(fb, r, 2)
+        c, d, e, f = cell(fb, r, 3), cell(fb, r, 4), cell(fb, r, 5), cell(fb, r, 6)
+        if isinstance(nm, str) and isinstance(c, (int, float)):
+            rows.append((no, nm, c, d, e, f))
+    fb_rows_all.append((sec_name, rows))
+near(sum(len(rows) for _, rows in fb_rows_all), 34 + 27 + 49 + 12 + 1, "分包计划全量行数")
+
 # ============ 6. 六月线下合同签订及支付计划 ============
 lj = sheet_rows("六月线下合同签订及支付计划", max_col=14)
 jun_contracts = []
@@ -200,12 +227,41 @@ for r in range(2, 12):
     nm, plan, signed, meter, pay, note = cell(lj, r, 2), cell(lj, r, 6), cell(lj, r, 7), cell(lj, r, 8), cell(lj, r, 12), cell(lj, r, 14)
     if isinstance(nm, str) and nm != "合计":
         jun_contracts.append((nm, plan, signed, meter, pay, note))
+# 全量表（含中标价/控制价/内控成本/税率/税金/支付比例/备注）
+jun_full = []
+for r in range(2, 12):
+    nm = cell(lj, r, 2)
+    if not isinstance(nm, str) or nm == "合计":
+        continue
+    vals = dict(
+        bid=cell(lj, r, 3), ctrl=cell(lj, r, 4), target=cell(lj, r, 5),
+        plan=cell(lj, r, 6), signed=cell(lj, r, 7), meter=cell(lj, r, 8),
+        invoice=cell(lj, r, 9), rate=cell(lj, r, 10), tax=cell(lj, r, 11),
+        pay=cell(lj, r, 12), ratio=cell(lj, r, 13), note=cell(lj, r, 14),
+    )
+    jun_full.append((nm, vals))
 near(cell(lj, 14, 7), 200087105.90, "六月签约合计")
 JUN_SIGNED = cell(lj, 14, 7)
 JUN_PREPAID = cell(lj, 15, 11)
 JUN_VAT = cell(lj, 19, 11)       # 实缴增值税
 near(JUN_PREPAID, 248107773.97, "六月预付款")
 near(cell(lj, 16, 11), 5098728.57, "预缴税")
+
+# 方案二全量表
+fa2 = sheet_rows("针对预付款进项开票及支付计划（方案二）", max_col=13)
+fa_full = []
+for r in range(2, 12):
+    nm = cell(fa2, r, 2)
+    if not isinstance(nm, str) or nm == "合计":
+        continue
+    vals = dict(
+        bid=cell(fa2, r, 3), ctrl=cell(fa2, r, 4), target=cell(fa2, r, 5),
+        signed=cell(fa2, r, 6), meter=cell(fa2, r, 7), invoice=cell(fa2, r, 8),
+        rate=cell(fa2, r, 9), tax=cell(fa2, r, 10), pay=cell(fa2, r, 11),
+        ratio=cell(fa2, r, 12), note=cell(fa2, r, 13),
+    )
+    fa_full.append((nm, vals))
+near(cell(fa2, 13, 8), 115006809.03, "方案二可抵扣进项合计")
 
 # ============ 7. 税务计算 ============
 sw = sheet_rows("广州+上海税务计算", max_col=13)
@@ -273,11 +329,11 @@ write("合同资料", "镇龙东F10 EPC总承包招标与合同要点（标前�
 |---|---|---|---|---|---|---|
 {rows_subj}
 
-- 分部分项及单价措施工程费合计：控制价 {fmt(cell(hz,3,3))} 元、合同价 {fmt(cell(hz,3,4))} 元、成本 {fmt(cell(hz,3,5))} 元、利润率 16.99%（以上均为不含税口径）
+- 分部分项及单价措施工程费合计：控制价 {fmt(cell(hz,3,3))} 元、合同价 {fmt(cell(hz,3,4))} 元、成本 {fmt(cell(hz,3,5))} 元、利润 {fmt(cell(hz,3,6))} 元、利润率 16.99%（以上均为不含税口径）
 - 二 总价措施费：控制价 {fmt(MEAS[0])} 元、合同价 {fmt(MEAS[1])} 元（其中绿色施工安全防护措施费 63309892.64 元）
 - 三 其他项目费（含总包服务费）：控制价 {fmt(OTH_PKG[0])} 元，合同价侧保留 {fmt(OTH_PKG[1])} 元
 - 四 税金：控制价 {fmt(TAX_PKG[0])} 元、合同价 {fmt(TAX_PKG[1])} 元（按控制价下浮 5% 后的税金计算，预估项目负税率 1.3%）
-- 五 其他直接费 {fmt(OTHER_DIRECT)} 元、六 综合管理费（间接费）{fmt(MGMT_FEE)} 元（按 1.3% 考虑），均为成本项
+- 五 其他直接费 {fmt(OTHER_DIRECT)} 元、六 综合管理费（间接费）{fmt(MGMT_FEE)} 元（按 1.3% 考虑），均为成本项——汇总表在「相对控制价利润」列以负值列示（{fmt(cell(hz,18,6))}、{fmt(cell(hz,19,6))}）
 - 七 合计：控制价 **{fmt(CTRL)}**、合同价 **{fmt(BID)}**、成本 **{fmt(COST)}**、利润 **{fmt(PROFIT)}**
 """ + PROV)
 
@@ -368,32 +424,36 @@ write("成本月报", "镇龙东F10 两算对比章节概览与代表性单价�
 
 write("成本月报", "镇龙东F10 主要材料与分包价格及下浮率（2026.6.10）.md", f"""# {TITLE}——主要材料与分包价格及专业工程下浮率（基准日 2026-06-10）
 
-## 1. 主要材料目标价（不含税，前 10 项，材料合计 {fmt(222275576.70)} 元）
+## 1. 主要材料目标价（全量 {len(mats)} 项，材料合计不含税 {fmt(222275576.70)} 元 / 含税 {fmt(251171401.67)} 元）
 
-| 材料名称 | 单位 | 数量 | 成本单价（元） | 不含税合价（元） |
-|---|---|---|---|---|
-""" + "\n".join(f"| {m[0]} | {m[1]} | {fmt(m[2])} | {fmt(m[3])} | {fmt(m[4])} |" for m in mats[:10]) + f"""
+| 材料名称 | 单位 | 数量 | 信息价2026.5 | 成本单价（元） | 不含税合价（元） | 税金（元） | 含税单价（元） | 含税合价（元） |
+|---|---|---|---|---|---|---|---|---|
+""" + "\n".join(
+    f"| {m[0]} | {m[1]} | {fmt(m[2])} | {fmt(cell(mat_ws, m[5], 5)) if isinstance(cell(mat_ws, m[5], 5), (int, float)) else '—'} | {fmt(m[3])} | {fmt(m[4])} | {fmt(cell(mat_ws, m[5], 9)) if isinstance(cell(mat_ws, m[5], 9), (int, float)) else '—'} | {fmt(cell(mat_ws, m[5], 10)) if isinstance(cell(mat_ws, m[5], 10), (int, float)) else '—'} | {fmt(cell(mat_ws, m[5], 11)) if isinstance(cell(mat_ws, m[5], 11), (int, float)) else '—'} |"
+    for m in mats) + f"""
 
-注：钢筋目标单价 3000 元/t、总量 {fmt(25504.18)} t；混凝土 C30 单价 293.36 元/m³、总量 {fmt(102776.03)} m³。材料合计（不含税）{fmt(222275576.70)} 元、含税 {fmt(251171401.67)} 元。
+注：钢筋目标单价 3000 元/t、总量 {fmt(25504.18)} t；混凝土 C30 单价 293.36 元/m³、总量 {fmt(102776.03)} m³。合计行照录源表：不含税 {fmt(cell(mat_ws,51,7))} 元、税金合计 {fmt(cell(mat_ws,51,9))} 元（源表合计行公式格）、含税 {fmt(cell(mat_ws,51,11))} 元。
 
-## 2. 主要分包单价（不含税，前 8 项）
+## 2. 主要分包单价（全量 {len(subs)} 项，含税列照录源表）
 
-| 分包项 | 单位 | 数量 | 单价（元） | 不含税合价（元） |
-|---|---|---|---|---|
-""" + "\n".join(f"| {m[0]} | {m[1]} | {fmt(m[2])} | {fmt(m[3])} | {fmt(m[4])} |" for m in subs[:8]) + f"""
+| 分包项 | 单位 | 数量 | 单价不含税（元） | 不含税合价（元） | 税率 | 税金（元） | 单价含税（元） | 含税合价（元） |
+|---|---|---|---|---|---|---|---|---|
+""" + "\n".join(
+    f"| {m[0]} | {m[1]} | {fmt(m[2])} | {fmt(m[3])} | {fmt(m[4])} | {fmt(cell(mat_ws, m[5], 18)) if isinstance(cell(mat_ws, m[5], 18), (int, float)) else '—'} | {fmt(cell(mat_ws, m[5], 19)) if isinstance(cell(mat_ws, m[5], 19), (int, float)) else '—'} | {fmt(cell(mat_ws, m[5], 20)) if isinstance(cell(mat_ws, m[5], 20), (int, float)) else '—'} | {fmt(cell(mat_ws, m[5], 21)) if isinstance(cell(mat_ws, m[5], 21), (int, float)) else '—'} |"
+    for m in subs) + f"""
 
-注：「拆除混凝土（残值）」为负项 -1,594,915.08 元（残值回收冲减成本）。
+注：「拆除混凝土（残值）」为负项 {fmt([m for m in subs if '残值' in m[0]][0][4])} 元（残值回收冲减成本）。分包单价表 R 列税率以元记（源表口径），例如 3% 项记 0.03、9% 项记 0.09。
 
-## 3. 专业工程下浮率
+## 3. 专业工程下浮率（全量 {sum(len(v) for v in ffl.values())} 项）
 
-- 下浮 25%：地基基础、机电各专业、景观绿化、门窗、装饰装修、人防、智能化等（{len(ffl.get(25, []))} 项）
-- 下浮 30%：防腐防水
+- 下浮 25%：{"、".join(ffl.get(25, []))}
+- 下浮 30%：{"、".join(ffl.get(30, []))}
 - 下浮 35%：{"、".join(ffl.get(35, []))}
 """ + PROV)
 
 # ---- 4. 项目概况与商务结构 ----
 cat_rows = "\n".join(
-    f"| {k} | {fmt(v)} | {fmt(v*1.09 if k!='材料' else v*1.13)} | {round(v/DOWN_TOTAL*100,1)}% |"
+    f"| {k} | {fmt(v)} | {fmt(cats_gross[k])} | {pct(cats_share[k])}% |"
     for k, v in cats.items()
 )
 write("综合月报", "镇龙东F10 项目概况与商务结构（标前2026.6.10）.md", f"""# {TITLE}——项目概况与商务结构（标前，基准日 2026-06-10）
@@ -416,10 +476,10 @@ write("综合月报", "镇龙东F10 项目概况与商务结构（标前2026.6.1
 
 测算利润 {fmt(PROFIT)} 元（相对合同价 {PROFIT_RATE}%）在扣除固定上缴负担后形成股东方剩余。
 
-## 3. 对下合同计划（一体化，不含税合计 {fmt(DOWN_TOTAL)} 元）
+## 3. 对下合同计划（一体化，不含税合计 {fmt(DOWN_TOTAL)} 元 / 含税 {fmt(DOWN_GROSS)} 元）
 
-| 类别 | 不含税合同额（元） | 税率 |
-|---|---|---|
+| 类别 | 不含税合同额（元） | 含税合同额（元） | 表内占比 |
+|---|---|---|---|
 {cat_rows}
 
 - 劳务类 {len([1]) and 33} 项按 3% 简易计税；专业类 27 项按 9%；材料类 48 项按 13%；其他合同按 6%
@@ -438,6 +498,78 @@ write("综合月报", "镇龙东F10 项目概况与商务结构（标前2026.6.1
 | 需增加进项最小值 | **{fmt(EXTRA_INPUT)}** |
 
 预付款一次性到账导致销项瞬时放大，"需增加进项最小值 {fmt(EXTRA_INPUT)} 元"是本项目税务筹划的核心约束（详见现金流库文档）。
+""" + PROV)
+
+# ---- 3b. 分包计划全量明细（逐行，税务筹划证据链） ----
+def fb_section_md():
+    parts = []
+    for sec_name, rows in fb_rows_all:
+        parts.append(f"\n### {sec_name}\n\n| 序号 | 名称 | 合同价不含税（元） | 税率 | 税金（元） | 合同价含税（元） |\n|---|---|---|---|---|---|")
+        for no, nm, c, d, e, f in rows:
+            rate = f"{d*100:g}%" if isinstance(d, (int, float)) else "—"
+            parts.append(f"| {no if no is not None else ''} | {nm} | {fmt(c)} | {rate} | {fmt(e) if isinstance(e,(int,float)) else '—'} | {fmt(f) if isinstance(f,(int,float)) else '—'} |")
+    parts.append(f"\n（表内对照值：对下合同总额税金合计 {fmt(cell(fb,8,5))} 元；劳务段源表 H13 散值 {fmt(cell(fb,13,8))} 为文明施工费引用，照录备查。）")
+    return "\n".join(parts)
+
+def jun_full_md():
+    parts = []
+    for nm, v in jun_full:
+        def g(k, nd=2):
+            x = v.get(k)
+            return fmt(x, nd) if isinstance(x, (int, float)) else "—"
+        rate_s = f"{v['rate']*100:g}%" if isinstance(v.get('rate'), (int, float)) else "—"
+        ratio_s = f"{v['ratio']*100:.1f}%" if isinstance(v.get('ratio'), (int, float)) else "—"
+        parts.append(f"| {nm} | {g('bid')} | {g('ctrl')} | {g('target')} | {g('plan')} | {g('signed')} | {g('meter')} | {rate_s} | {g('tax')} | {g('pay')} | {ratio_s} |")
+    # 合计行（源表行14）
+    tot = {
+        'bid': cell(lj, 14, 3), 'ctrl': cell(lj, 14, 4), 'target': cell(lj, 14, 5),
+        'plan': cell(lj, 14, 6), 'signed': cell(lj, 14, 7), 'meter': cell(lj, 14, 8),
+        'tax': cell(lj, 14, 11),
+    }
+    parts.append("| **合计** | " + " | ".join([
+        fmt(tot['bid']), fmt(tot['ctrl']), fmt(tot['target']), fmt(tot['plan']),
+        fmt(tot['signed']), fmt(tot['meter']), "—", fmt(tot['tax']), "—", "—"]) + " |")
+    return "\n".join(parts)
+
+def fa_full_md():
+    parts = []
+    for nm, v in fa_full:
+        def g(k, nd=2):
+            x = v.get(k)
+            return fmt(x, nd) if isinstance(x, (int, float)) else "—"
+        rate_s = f"{v['rate']*100:g}%" if isinstance(v.get('rate'), (int, float)) else "—"
+        ratio_s = f"{v['ratio']*100:.1f}%" if isinstance(v.get('ratio'), (int, float)) else "—"
+        parts.append(f"| {nm} | {g('bid')} | {g('ctrl')} | {g('target')} | {g('signed')} | {g('meter')} | {g('invoice')} | {rate_s} | {g('tax')} | {g('pay')} | {ratio_s} |")
+    # 合计行（源表行13）
+    tot = {
+        'bid': cell(fa2, 13, 3), 'ctrl': cell(fa2, 13, 4), 'target': cell(fa2, 13, 5),
+        'signed': cell(fa2, 13, 6), 'meter': cell(fa2, 13, 7), 'invoice': cell(fa2, 13, 8),
+        'tax': cell(fa2, 13, 10),
+    }
+    parts.append("| **合计** | " + " | ".join([
+        fmt(tot['bid']), fmt(tot['ctrl']), fmt(tot['target']), fmt(tot['signed']),
+        fmt(tot['meter']), fmt(tot['invoice']), "—", fmt(tot['tax']), "—", "—"]) + " |")
+    return "\n".join(parts)
+
+write("综合月报", "镇龙东F10 分包计划及税务筹划全量明细（2026.6.10）.md", f"""# {TITLE}——分包计划及税务筹划全量明细（基准日 2026-06-10）
+
+源表「分包计划及税务筹划」全量 {sum(len(r) for _, r in fb_rows_all)} 行逐行收录（对下合同总额不含税 {fmt(DOWN_TOTAL)} 元、含税 {fmt(DOWN_GROSS)} 元）；分类汇总与上缴结构见《镇龙东F10 项目概况与商务结构（标前2026.6.10）》。
+{fb_section_md()}
+
+## 税负汇总（表尾）
+
+| 指标 | 金额（元） |
+|---|---|
+| 项目整体税负 | {fmt(TAX_LOAD)} |
+| 项目整体预缴 | {fmt(TAX_PREPAID)} |
+| 上缴公司税金 | {fmt(TAX_REMIT)} |
+| 预付款（含税） | {fmt(PREPAY)} |
+| 其中预交 2% | {fmt(PREPAY_PRE2)} |
+| 其余缴纳部分 7% | {fmt(PREPAY_7)} |
+| 实际缴纳 | {fmt(cell(fb,139,5))} |
+| 预交税 | {fmt(cell(fb,140,5))} |
+| 上缴公司税金（实际缴纳构成） | {fmt(cell(fb,141,5))} |
+| 需增加进项最小值 | **{fmt(EXTRA_INPUT)}** |
 """ + PROV)
 
 # ---- 5. 推演基线口径表 ----
@@ -508,7 +640,7 @@ write("现金流库", "镇龙东F10 预付款与税负资金安排（2026.6.10�
 
 ## 3. 上海侧缴纳（机构所在地）
 
-销项税 {fmt(20485962.99)} 元 − 预缴 {fmt(4552436.22)} 元 = 应交增值税 {fmt(SH_VAT)} 元；附加税费 {fmt(1912023.21)} 元；合计 **{fmt(SH_TOTAL)}** 元；预缴总税（广州+上海附加）**{fmt(SH_PREPAID_ALL)}** 元。
+销项税 {fmt(20485962.99)} 元 − 预缴 {fmt(4552436.22)} 元 = 应交增值税 {fmt(SH_VAT)} 元；附加税费：城建税 7% {fmt(1115346.87)} 元 + 教育费附加 3% {fmt(478005.80)} 元 + 地方教育附加 2% {fmt(318670.54)} 元 = {fmt(1912023.21)} 元；合计 **{fmt(SH_TOTAL)}** 元；预缴总税（广州+上海附加）**{fmt(SH_PREPAID_ALL)}** 元。
 
 ## 4. 六月线下合同签订及支付计划（13 项）
 
@@ -526,6 +658,20 @@ write("现金流库", "镇龙东F10 预付款与税负资金安排（2026.6.10�
 - 方案一：与业主沟通预付款分批支付——**建设单位不同意**
 - 方案二（本表测算）：项目部争取进项初步满足税负平衡——可抵扣进项 {fmt(11136963.78)} 元、实缴增值税 {fmt(4796562.99)} 元、倒挂税负 -4796562.99 元（支护/土石方虚拟计量 40%、钢筋锁 40%、模板脚手架 40%、管桩锁 30%）
 - 方案三：剩余不足进项由集团公司统筹
+
+## 6. 六月合同与方案二全量明细
+
+### 6.1 六月线下合同（全列，元）
+
+| 合同 | 中标价不含暂列金 | 招标控制价不含暂列金 | 内控目标成本 | 筹划金额 | 实际签订 | 计量金额 | 税率 | 其中税金 | 实际支付 | 支付比例 |
+|---|---|---|---|---|---|---|---|---|---|---|
+{jun_full_md()}
+
+### 6.2 方案二：预付款进项开票及支付计划（全列，元）
+
+| 合同 | 中标价不含暂列金 | 招标控制价不含暂列金 | 内控目标成本 | 实际签订 | 计量金额 | 可收取发票 | 税率 | 其中税金 | 实际支付 | 支付比例 |
+|---|---|---|---|---|---|---|---|---|---|---|
+{fa_full_md()}
 """ + PROV)
 
-print("[gen] 完成：6 份文档 ->", OUT)
+print("[gen] 完成：8 份文档 ->", OUT)
