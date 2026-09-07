@@ -41,7 +41,10 @@ export function getBaseline(project) {
     profitWan: Math.round(profitWan),
     bidYi,
     targetYi,
-    actualCostYi: +(targetYi * (project.costCompletion / 100) + targetYi * 0.08).toFixed(2),
+    // 标前/未开工项目（progress 与 costCompletion 均为 0）不套用"已发生 8% 启动投入"经验公式，实际成本按 0
+    actualCostYi: +(project.progress === 0 && project.costCompletion === 0
+      ? 0
+      : targetYi * (project.costCompletion / 100) + targetYi * 0.08).toFixed(2),
     qualityScore: +qualityBase.toFixed(1),
     safetyScore: Math.min(95, 88 - project.lagNodes * 2 + (project.risks.red > 0 ? -4 : 2)),
     cashflowJun: CASHFLOW_JUN,

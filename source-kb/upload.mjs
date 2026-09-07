@@ -27,6 +27,9 @@ const TARGETS = [
   { dir: '现金流库', kb: '现金流库' },
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+// --src docs-real：灌真实标前测算文档（gen-real.py 生成物）；默认 docs/（demo）
+const srcIdx = process.argv.indexOf('--src');
+const SRC = srcIdx > -1 ? process.argv[srcIdx + 1] : 'docs';
 const targets = only ? TARGETS.filter((t) => t.kb === only || t.dir === only) : TARGETS;
 
 const j = async (r) => {
@@ -94,7 +97,11 @@ async function main() {
   const grand = { done: 0, total: 0 };
 
   for (const t of targets) {
-    const dirAbs = path.join(__dirname, 'docs', t.dir);
+    const dirAbs = path.join(__dirname, SRC, t.dir);
+    if (!fs.existsSync(dirAbs)) {
+      console.error(`[upload] [${t.kb}] 目录不存在: ${dirAbs}`);
+      continue;
+    }
     const kb = items.find((k) => k.name === t.kb);
     if (!kb) {
       console.error(`[upload] [${t.kb}] 知识库不存在——请先在 WebUI 创建，并确认 scoped key 白名单已勾选该库`);

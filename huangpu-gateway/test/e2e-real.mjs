@@ -5,7 +5,7 @@
  * 用法：node test/e2e-real.mjs
  */
 const GW = process.env.GW || 'http://127.0.0.1:8090';
-const query = process.argv[2] || '新联01钢筋涨价8%后利润率变成多少？';
+const query = process.argv[2] || '镇龙东F10钢筋涨价8%后利润率变成多少？';
 
 const ok = await fetch(`${GW}/health`).then((r) => r.ok).catch(() => false);
 if (!ok) {
@@ -88,7 +88,7 @@ while (true) {
 }
 totalMs = Date.now() - t0;
 const engineTools = tools.filter((n) => /run_scenario|get_baseline|get_current_status|list_presets/.test(n));
-const hasEngineNum = /18\.46/.test(answerText) && /19\.59/.test(answerText);
+const hasEngineNum = /14\.29/.test(answerText) && /14\.77/.test(answerText);
 console.log('---');
 console.log(`tools: ${tools.join(',') || '(none)'}`);
 console.log(`verdict: ${verdict || '(none)'}`);

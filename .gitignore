@@ -36,3 +36,7 @@ huangpu-sandbox/deploy/ossutil-*/
 
 # 部署打包产物（体积大，不入库）
 /release-*/
+
+# 真实项目商务数据（镇龙东F10 标前测算）：生成物与源 xlsx 均严禁入库
+/source-kb/docs-real/
+/*.xlsx

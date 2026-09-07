@@ -38,17 +38,17 @@ function projectHint() {
 }
 
 const baselineShape = {
-  bid_price_yi: z.number().positive().describe('中标合同价（亿）——出自合同/中标材料'),
-  target_cost_yi: z.number().positive().describe('目标成本（亿）——出自成本测算/月报'),
-  actual_cost_yi: z.number().positive().describe('累计实际成本（亿）——出自成本月报'),
-  profit_rate: z.number().min(0).max(100).describe('当前实际利润率（%）——出自成本月报'),
-  payment_rate: z.number().min(0).max(100).describe('回款率（%）——出自商务/综合月报'),
-  progress: z.number().min(0).max(100).describe('形象进度（%）——出自监理/综合月报'),
-  cost_completion: z.number().min(0).max(100).describe('成本完成度（%）——出自成本月报'),
-  lag_nodes: z.number().int().min(0).describe('滞后节点数（个）——出自监理/综合月报'),
-  risk_total: z.number().int().min(0).describe('风险总数（个）——出自风险台账/综合月报'),
-  risk_red: z.number().int().min(0).describe('红色风险数（个）——出自风险台账/综合月报'),
-  cashflow_jun_wan: z.number().describe('本期现金流结余（万）——出自资金计划'),
+  bid_price_yi: z.number().positive().describe('中标合同价（亿）——出自合同/中标材料；标前项目为预估合同价（控制价下浮测算值）'),
+  target_cost_yi: z.number().positive().describe('目标成本（亿）——出自成本测算/月报；标前项目为内部测算成本'),
+  actual_cost_yi: z.number().min(0).describe('累计实际成本（亿）——出自成本月报；标前未开工为 0'),
+  profit_rate: z.number().min(0).max(100).describe('当前实际利润率（%）——出自成本月报；标前为测算利润率（相对合同价口径）'),
+  payment_rate: z.number().min(0).max(100).describe('回款率（%）——出自商务/综合月报；标前为 0'),
+  progress: z.number().min(0).max(100).describe('形象进度（%）——出自监理/综合月报；标前为 0'),
+  cost_completion: z.number().min(0).max(100).describe('成本完成度（%）——出自成本月报；标前为 0'),
+  lag_nodes: z.number().int().min(0).describe('滞后节点数（个）——出自监理/综合月报；标前为 0'),
+  risk_total: z.number().int().min(0).describe('风险总数（个）——出自风险台账/综合月报；标前为 0'),
+  risk_red: z.number().int().min(0).describe('红色风险数（个）——出自风险台账/综合月报；标前为 0'),
+  cashflow_jun_wan: z.number().describe('本期现金流结余（万）——出自资金计划；现金流测算缺失时按 0'),
 };
 
 const globalsShape = {
@@ -81,11 +81,7 @@ function json(result) {
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
 
-const server = new McpServer({ name: 'profit-engine', version: '2.0.0' });
-
-server.registerTool(
-  'run_scenario',
-  {
+const runScenarioCfg = {
     title: '利润情景推演',
     description:
       '对指定地块执行确定性利润推演（数值铁律：利润数字必须由本引擎计算，模型不得自行推算）。' +
@@ -100,8 +96,8 @@ server.registerTool(
       top_overruns: z.array(z.string()).optional().describe('超支分项列表（可选，出自成本月报）'),
       ...factorShape,
     },
-  },
-  async (a) => {
+};
+const runScenarioHandler = async (a) => {
     const meta = resolveProjectMeta(a.project);
     const project = {
       id: meta.id,
@@ -132,18 +128,20 @@ server.registerTool(
       ...(a.period ? { period: a.period } : {}),
       result: sim,
     });
-  }
-);
+};
 
-server.registerTool(
-  'list_presets',
-  {
+/** 每请求新建 McpServer+transport（McpServer 单实例同一时刻只挂一个 transport，
+ *  共享实例在并发/快速连发时 "Already connected" 500；无状态模式下按请求装配是官方形态） */
+function buildServer() {
+  const s = new McpServer({ name: 'profit-engine', version: '2.0.0' });
+  s.registerTool('run_scenario', { ...runScenarioCfg }, runScenarioHandler);
+  s.registerTool('list_presets', {
     title: '预设情景清单',
     description: '列出可用的推演预设情景与推演维度说明（供选择情景用，不返回具体数值）。',
     inputSchema: {},
-  },
-  async () => json({ presets: PRESETS, simTypes: SIM_TYPES })
-);
+  }, async () => json({ presets: PRESETS, simTypes: SIM_TYPES }));
+  return s;
+}
 
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -166,11 +164,11 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  // 无状态模式：每个请求独立 transport，不维护会话
+  // 无状态模式：每个请求独立 server+transport，不维护会话
   try {
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on('close', () => transport.close());
-    await server.connect(transport);
+    await buildServer().connect(transport);
 
     let body = '';
     for await (const chunk of req) body += chunk;
