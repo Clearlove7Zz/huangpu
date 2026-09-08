@@ -215,14 +215,15 @@ const active = sessions.find((session) => session.id === activeSessionId)
 
   useEffect(() => {
     if (!ragReady()) return;
+    const scope = user?.scope;
     const role = user?.role ?? '';
     void Promise.all([listKnowledgeBases(), listAgents()]).then(([kbs, agents]) => {
-      const allowedKbs = filterKbsByRole(role, kbs);
-      const allowedAgents = filterAgentsByRole(role, agents);
+      const allowedKbs = scope ? filterKbsByRole(scope, kbs) : filterKbsByRole(role, kbs);
+      const allowedAgents = scope ? filterAgentsByRole(scope, agents) : filterAgentsByRole(role, agents);
       setAvailableKbs(allowedKbs);
       setAvailableAgents(allowedAgents);
       setSelectedKbIds(allowedKbs.map((kb) => kb.id));
-      setSelectedAgentId(resolveDefaultAgent(role, allowedAgents));
+      setSelectedAgentId(scope ? resolveDefaultAgent(scope, allowedAgents) : resolveDefaultAgent(role, allowedAgents));
     }).catch(() => undefined);
   }, [user?.role]);
 

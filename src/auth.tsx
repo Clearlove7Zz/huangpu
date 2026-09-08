@@ -3,11 +3,24 @@ import type { ReactNode } from 'react';
 import MOCK_DATA from './data';
 import { setToken } from './config/gateway-auth';
 
+export interface GatewayScope {
+  kbIds: string[];
+  kbAll: boolean;
+  kbWrite: boolean;
+  pages: string[];
+  agentIds: string[];
+  agentNameKeywords: string[];
+  defaultAgentId: string;
+  defaultAgentName?: string;
+  canAskProfit: boolean;
+}
+
 export interface UserInfo {
   name: string;
   role: string;
   avatar: string;
   nav: string[];
+  scope: GatewayScope;
 }
 
 export const TEST_ACCOUNT = {
@@ -26,34 +39,55 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState>({ user: null, login: () => undefined, loginWithGateway: async () => ({ ok: false, offline: true }), logout: () => undefined });
 
+/** 前端 mock roles 仅作为离线演示模式的登录账号表；正式权限以网关下发的 scope 为准 */
 const ROLES = MOCK_DATA.roles as Record<string, { nav: string[]; name: string }>;
+
+const SCOPE_KEY = 'hp-gateway-scope';
+
+function loadScope(): GatewayScope | null {
+  try {
+    const raw = localStorage.getItem(SCOPE_KEY);
+    return raw ? (JSON.parse(raw) as GatewayScope) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** AI 助手对所有角色开放：统一在 nav 最前面注入（登录与刷新恢复共用，保证一致） */
 function normalizeNav(nav: string[]): string[] {
   return nav.includes('ai') ? nav : ['ai', ...nav];
 }
 
+function buildUser(name: string, role: string, scope: GatewayScope): UserInfo {
+  return {
+    name,
+    role,
+    avatar: name.charAt(0),
+    nav: normalizeNav(scope.pages ?? []),
+    scope,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(() => {
+    // 刷新恢复：优先消费网关下发的 scope（hp-gateway-scope）；无 scope 时按离线 mock 登录态恢复
     const saved = localStorage.getItem('hp-role');
     if (!saved || !ROLES[saved]) return null;
-    return {
-      name: ROLES[saved].name,
-      role: saved,
-      avatar: ROLES[saved].name.charAt(0),
-      nav: normalizeNav(ROLES[saved].nav),
-    };
+    const scope = loadScope();
+    if (!scope) return null; // 无网关 scope = 离线演示模式未完成，回登录页
+    return buildUser(ROLES[saved]?.name ?? saved, saved, scope);
   });
 
   const login = useCallback((role: string) => {
     const meta = ROLES[role];
     if (!meta) return;
     localStorage.setItem('hp-role', role);
-    setUser({ name: meta.name, role, avatar: meta.name.charAt(0), nav: normalizeNav(meta.nav) });
+    // 离线演示模式：无网关 scope，仅按 mock nav 构建（不走受控接口）
+    setUser({ name: meta.name, role, avatar: meta.name.charAt(0), nav: normalizeNav(meta.nav), scope: { kbIds: [], kbAll: false, kbWrite: false, pages: normalizeNav(meta.nav).filter((k) => k !== 'ai'), agentIds: [], agentNameKeywords: [], defaultAgentId: 'builtin-quick-answer', canAskProfit: true } });
   }, []);
 
-  // 网关登录（demo 后端网关 huangpu-gateway）：成功后令牌存 localStorage，
-  // 后续 /api/v1 请求统一经 gatewayHeaders() 附加；角色与 nav 复用前端 ROLES 元数据。
+  // 网关登录（demo 后端网关 huangpu-gateway）：令牌与网关下发的 scope 一并保存；
+  // 前端各页的库/智能体/页面过滤全部消费 scope，不再本地重算矩阵。
   const loginWithGateway = useCallback(async (username: string, password: string) => {
     try {
       const res = await fetch('/api/auth/login', {
@@ -65,16 +99,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         return { ok: false, error: body.error ?? `登录失败 HTTP ${res.status}` };
       }
-      const data = (await res.json()) as { token: string; role: string; name: string };
+      const data = (await res.json()) as { token: string; role: string; name: string; scope: GatewayScope };
+      if (!data.scope) {
+        return { ok: false, error: '网关未下发权限范围（scope），请检查网关版本' };
+      }
       setToken(data.token);
       localStorage.setItem('hp-role', data.role);
+      localStorage.setItem(SCOPE_KEY, JSON.stringify(data.scope));
       const meta = ROLES[data.role];
-      setUser({
-        name: meta?.name ?? data.name,
-        role: data.role,
-        avatar: (meta?.name ?? data.name).charAt(0),
-        nav: normalizeNav(meta?.nav ?? []),
-      });
+      setUser(buildUser(meta?.name ?? data.name, data.role, data.scope));
       return { ok: true };
     } catch {
       // 网关未启动 → 调用方回退演示模式（前端 mock 登录）
@@ -84,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem('hp-role');
+    localStorage.removeItem(SCOPE_KEY);
     setToken('');
     setUser(null);
   }, []);

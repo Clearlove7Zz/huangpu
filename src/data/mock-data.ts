@@ -5,6 +5,8 @@ const MOCK_DATA = {
   ownerProfitRate: 5, // 业主给予的总包利润（EPC费率下浮5%）
   materialWarnThreshold: 10,
 
+  // ⚠️ roles 仅作离线演示模式的登录账号表；正式权限以网关下发的 scope 为准
+  // （auth.tsx 消费 hp-gateway-scope；本段 nav 在联网登录时不再使用）。2026-09-08
   roles: {
     '股份领导/指挥长': { nav: ['dashboard', 'project', 'decision-system'], name: '宁总' },
     '指挥部-商务部': { nav: ['dashboard', 'project', 'decision-system', 'progress-system', 'design-control', 'documents', 'work-mgmt', 'cost-system', 'material', 'supplier-system', 'cashflow', 'reports', 'sync'], name: '艾经理' },

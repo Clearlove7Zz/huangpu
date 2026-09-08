@@ -94,32 +94,38 @@ export function getRbac(role: string): RbacScope {
   };
 }
 
-/** 按角色过滤知识库列表 */
-export function filterKbsByRole(role: string, kbs: { id: string; name: string }[]): { id: string; name: string }[] {
-  const scope = getRbac(role);
-  return kbs.filter((kb) => scope.kbIds.includes(kb.id));
+/**
+ * 以下过滤函数已升级为 scope 优先：登录后网关下发的 scope（auth.tsx 存于
+ * UserInfo.scope）是单一事实源；role 参数仅作 scope 缺失（离线演示模式）的兜底。
+ */
+export function filterKbsByRole(
+  roleOrScope: string | RbacScope,
+  kbs: { id: string; name: string }[],
+): { id: string; name: string }[] {
+  const scope = typeof roleOrScope === 'string' ? getRbac(roleOrScope) : roleOrScope;
+  return kbs.filter((kb) => (scope.kbIds ?? []).includes(kb.id));
 }
 
-/** 按角色过滤智能体列表（内置 ID 白名单 + 自定义名称关键词） */
 export function filterAgentsByRole(
-  role: string,
+  roleOrScope: string | RbacScope,
   agents: { id: string; name: string; mode: string; builtin: boolean }[],
 ): { id: string; name: string; mode: string; builtin: boolean }[] {
-  const scope = getRbac(role);
+  const scope = typeof roleOrScope === 'string' ? getRbac(roleOrScope) : roleOrScope;
   return agents.filter(
-    (a) => scope.agentIds.includes(a.id) || scope.agentNameKeywords.some((kw) => a.name.includes(kw)),
+    (a) =>
+      (scope.agentIds ?? []).includes(a.id) ||
+      (scope.agentNameKeywords ?? []).some((kw) => a.name.includes(kw)),
   );
 }
 
-/** 解析角色默认智能体 ID：优先按名称精确匹配，失败回退内置默认 */
 export function resolveDefaultAgent(
-  role: string,
+  roleOrScope: string | RbacScope,
   agents: { id: string; name: string; mode: string; builtin: boolean }[],
 ): string {
-  const scope = getRbac(role);
+  const scope = typeof roleOrScope === 'string' ? getRbac(roleOrScope) : roleOrScope;
   if (scope.defaultAgentName) {
     const hit = agents.find((a) => a.name === scope.defaultAgentName);
     if (hit) return hit.id;
   }
-  return scope.defaultAgentId;
+  return scope.defaultAgentId ?? 'builtin-quick-answer';
 }

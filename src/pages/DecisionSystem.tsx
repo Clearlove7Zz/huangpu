@@ -79,14 +79,16 @@ export default function DecisionSystem() {
   // 按角色加载默认检索范围（知识库 + 智能体）
   useEffect(() => {
     if (!ragReady()) return;
+    const scope = user?.scope;
     const role = user?.role ?? '';
     void Promise.all([listKnowledgeBases(), listAgents()])
       .then(([kbs, agents]) => {
+        const effScope = scope ?? getRbac(role);
         ragScopeRef.current = {
-          kbIds: filterKbsByRole(role, kbs).map((kb) => kb.id),
-          agentId: filterAgentsByRole(role, agents).some((a) => a.id === getRbac(role).defaultAgentId)
-            ? getRbac(role).defaultAgentId
-            : '',
+          kbIds: filterKbsByRole(effScope, kbs).map((kb) => kb.id),
+          agentId: (effScope.defaultAgentName
+            ? filterAgentsByRole(effScope, agents).find((a) => a.name === effScope.defaultAgentName)?.id
+            : undefined) ?? effScope.defaultAgentId ?? '',
         };
       })
       .catch(() => undefined);
