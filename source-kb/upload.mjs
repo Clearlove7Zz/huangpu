@@ -47,6 +47,11 @@ async function uploadTo(kbId, kbName, dirAbs) {
   const list = await j(await fetch(`${BASE}/knowledge-bases/${kbId}/knowledge?page=1&page_size=100`, { headers: H }));
   const byTitle = new Map((list.data ?? []).map((d) => [d.title ?? d.file_name, d]));
 
+  // 「明细只检索」规则：全量明细类文档不参与图谱抽取（孤点唯一来源），上传时即带覆盖
+  const DETAIL_PATTERNS = ['全量明细', '主要材料与分包价格'];
+  const detailCfg = (title) =>
+    DETAIL_PATTERNS.some((p) => title.includes(p)) ? JSON.stringify({ graph_enabled: false }) : null;
+
   let done = 0;
   for (const f of files) {
     const title = f.replace(/\.md$/, '');
@@ -59,11 +64,15 @@ async function uploadTo(kbId, kbName, dirAbs) {
     const rev = `<!-- rev:${new Date().toISOString()} -->\n`;
     const content = Buffer.concat([fs.readFileSync(path.join(dirAbs, f)), Buffer.from(rev, 'utf8')]);
     const boundary = '----srckb' + Date.now() + Math.random().toString(36).slice(2);
-    const body = Buffer.concat([
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${f}"\r\nContent-Type: text/markdown\r\n\r\n`, 'utf8'),
-      content,
-      Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'),
-    ]);
+    const parts = [];
+    const pc = detailCfg(title);
+    if (pc) {
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="process_config"\r\n\r\n${pc}\r\n`, 'utf8'));
+    }
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${f}"\r\nContent-Type: text/markdown\r\n\r\n`, 'utf8'));
+    parts.push(content);
+    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'));
+    const body = Buffer.concat(parts);
     const up = await j(await fetch(`${BASE}/knowledge-bases/${kbId}/knowledge/file`, {
       method: 'POST',
       headers: { ...H, 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': body.length },

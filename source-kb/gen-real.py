@@ -66,7 +66,12 @@ def sheet_rows(name, max_col=30):
 
 
 def cell(rows, r, c):
-    return rows[r - 1][c - 1]
+    """取单元格。字符串内的换行/回车/连续空白压平——xlsx 单元格常含内嵌换行，
+    直接进 markdown 表格会把行撕裂成多行（2026-09-07 两算对比文档踩坑）。"""
+    v = rows[r - 1][c - 1]
+    if isinstance(v, str):
+        return re.sub(r"\s+", " ", v).strip()
+    return v
 
 
 # ============ 1. 汇总表 ============
