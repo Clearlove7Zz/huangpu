@@ -157,13 +157,22 @@ try {
   const lastLow = await lastBody();
   check('T6c 低权限默认智能体不变', lastLow.body.agent_id === 'builtin-quick-answer', `agent_id=${lastLow.body.agent_id}`);
 
-  // T7 指挥长 KB 过滤：kb-2(成本利润库) 应被滤掉
+  // T7a 全量角色（指挥长 kbAll）不过滤，kb-1/kb-2 原样透传
   await qa(tokNing, '/api/v1/knowledge-chat/s9', { query: '项目进度如何', knowledge_base_ids: ['kb-1', 'kb-2'], channel: 'web' });
   const lastFiltered = await lastBody();
   check(
-    'T7 知识库白名单过滤',
-    lastFiltered.url.includes('/s9') && JSON.stringify(lastFiltered.body.knowledge_base_ids) === JSON.stringify(['kb-1']),
+    'T7a 全量角色 KB 不过滤',
+    lastFiltered.url.includes('/s9') && JSON.stringify(lastFiltered.body.knowledge_base_ids) === JSON.stringify(['kb-1', 'kb-2']),
     `上游收到: ${JSON.stringify(lastFiltered.body.knowledge_base_ids)}`,
+  );
+
+  // T7b 部分角色（安全员：仅口径制度一个 ID）——kb-1/kb-2 均不在矩阵内，应全滤掉
+  await qa(tokXiong, '/api/v1/knowledge-chat/s10', { query: '项目进度如何', knowledge_base_ids: ['kb-1', 'kb-2'], channel: 'web' });
+  const lastXiong = await lastBody();
+  check(
+    'T7b 部分角色 KB 白名单过滤',
+    lastXiong.url.includes('/s10') && JSON.stringify(lastXiong.body.knowledge_base_ids) === JSON.stringify([]),
+    `上游收到: ${JSON.stringify(lastXiong.body.knowledge_base_ids)}`,
   );
 
   // T8 上游收到了网关注入的 X-API-Key（mock 缺 key 会 401，s9 拿到回答即证明）

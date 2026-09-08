@@ -60,18 +60,6 @@ function audit(entry) {
   console.log('[audit]', line);
 }
 
-// —— 知识库 ID→名称 映射缓存（角色关键词过滤用，5 分钟刷新） ——
-let kbCache = { at: 0, map: null };
-async function getKbNameMap() {
-  if (kbCache.map && Date.now() - kbCache.at < 5 * 60 * 1000) return kbCache.map;
-  const j = await upstreamJson(TARGET, 'GET', '/api/v1/knowledge-bases');
-  if (j && Array.isArray(j.data)) {
-    const map = {};
-    for (const kb of j.data) map[String(kb.id)] = String(kb.name ?? '');
-    kbCache = { at: Date.now(), map };
-  }
-  return kbCache.map; // 上游失败沿用旧缓存
-}
 
 // —— 智能体 ID→{name} 映射缓存（名称匹配越权判定与默认智能体解析用，5 分钟刷新） ——
 let agentCache = { at: 0, map: null };
@@ -125,15 +113,11 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
     }
   }
 
-  // ③ 知识库白名单：按角色关键词过滤请求体中的 knowledge_base_ids
-  if (!scope.kbKeywords.includes('*') && Array.isArray(body.knowledge_base_ids) && body.knowledge_base_ids.length) {
-    const map = await getKbNameMap();
-    if (map) {
-      body.knowledge_base_ids = body.knowledge_base_ids.filter((id) => {
-        const name = map[String(id)] ?? '';
-        return scope.kbKeywords.some((kw) => name.includes(kw));
-      });
-    }
+  // ③ 知识库白名单：按角色显式库 ID 矩阵过滤请求体中的 knowledge_base_ids
+  //    （kbAll 角色 = 全库可见，不做过滤，mock/真实库 ID 皆可透传）
+  if (!scope.kbAll && Array.isArray(body.knowledge_base_ids) && body.knowledge_base_ids.length) {
+    const allow = Array.isArray(scope.kbIds) ? scope.kbIds : [];
+    body.knowledge_base_ids = body.knowledge_base_ids.filter((id) => allow.includes(String(id)));
   }
 
   // ④ 转发 + SSE 旁路监听 + 流结束后流程对账（PRD §7.3 原文形态 + AD-09：
