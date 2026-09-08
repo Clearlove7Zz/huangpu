@@ -35,7 +35,7 @@ cd ../huangpu-react && npm run dev   # vite 已把 /api/v1 与 /api/auth 代理�
 
 | 职责 | 实现位置 | 说明 |
 |------|----------|------|
-| ① 认证 + 角色调度 | `lib/auth.mjs` + `lib/rbac.mjs` + `server.mjs` handleQa | demo 登录签发 HMAC 令牌；智能体白名单（内置按 ID，自定义按名称关键词匹配，白名单外 403）；未指定则按角色默认（优先名称解析「利润推演智能体」，回退内置默认）；知识库按角色关键词过滤；无利润权限的角色问利润直接 403 |
+| ① 认证 + 角色调度 | `lib/auth.mjs` + `lib/rbac.mjs` + `server.mjs` handleQa | demo 登录签发 HMAC 令牌；智能体白名单（内置已全部退场不分配，自定义按名称关键词匹配，白名单外 403）；未指定则按角色默认专属智能体（商务/财务→利润研判、指挥长→决策研判、工程→工程问答、外协→外协问答、安全→安全问答）；知识库按角色显式 kbIds 矩阵过滤（chat 请求体 + 管理接口读列表 + 单库读门禁）；管理写操作仅 kbWrite 角色（商务/财务/全权限）；无利润权限的角色问利润直接 403 |
 | ② 凭据持有 | `.env` + `lib/proxy.mjs` | WeKnora scoped key 只在网关 `.env`（已 gitignore），浏览器仅持网关令牌；引擎 MCP 有独立 X-API-Key 自鉴权（AD-08「MCP 自鉴权」） |
 | ③ 输出对账 | `lib/reconcile.mjs` + `lib/proxy.mjs` proxyQa | **PRD §7.3 原文形态 + AD-09 已生效**："AI 回答出现数字但过程中没有引擎调用记录，判定为模型编造，拒收并退回本地引擎出数"。引擎调用记录 = 上游真实 `tool_call` 事件且工具名命中引擎工具（`run_scenario/get_baseline/get_current_status/list_presets`，含 `mcp_<service>_` 前缀）——KB 工具（如 knowledge_search）不算引擎参与。只判流程完整性，不比对数字内容；回答实时透传，网关不代调不注入 |
 | ④ 审计 | `server.mjs` audit() | 登录/问答/两类拦截全部落 `logs/gateway-audit.jsonl`（一行一 JSON，含命中的引擎工具名列表） |
@@ -79,5 +79,5 @@ node test/e2e-real.mjs   # 真链路（需 WeKnora + engine-mcp + 网关在线�
 - 无 HTTPS / 数据库 / 限流；令牌为 HMAC 签名（无刷新机制，12h 过期）。
 - 引擎数据 `lib/engine-data.mjs` 与 `huangpu-react/src/data` 同源复制（头注有同步声明），接真实台账时整体替换。
 - 审计为本地 JSONL，生产需入库（PRD §7.3 审计设计）。
-- 角色→权限白名单在网关 `lib/rbac.mjs` 与前端 `src/config/rbac.ts` 各有一份（前者是强制源，后者仅界面过滤），两处需同步维护。
+- 权限单一事实源在网关 `lib/rbac.mjs`（登录/取 me 整包 scope 下发）；前端 `src/config/rbac.ts` 仅保留类型与离线兜底，过滤函数已 scope 优先。2026-09-08 起知识库授权为显式 kbIds 矩阵（非库名关键词）、页面可见性为 scope.pages、库管理权为 kbWrite、内置智能体（快速问答为 kb all 全库检索）不分配给任何角色。
 - 阶段 B 待办：引擎 Python FastMCP 移植（PRD M1.1 正式交付）+ 五情景逐位校验脚本，完成后 WeKnora 里换 MCP 注册 URL 即切换。

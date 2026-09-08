@@ -112,6 +112,7 @@ try {
   const tokAI = ai.json.token;
   const tokXiong = (await login('xiong', 'xiong123')).json.token;
   const tokNing = (await login('ning', 'ning123')).json.token;
+  const tokCao = (await login('cao', 'cao123')).json.token;
 
   // T2 无令牌 401
   const noTok = await qa('', '/api/v1/knowledge-chat/s1', { query: 'hi' });
@@ -163,6 +164,16 @@ try {
   await qa(tokNing, '/api/v1/agent-chat/s8', { query: '项目进度如何' });
   const lastLow = await lastBody();
   check('T6c 指挥长默认解析到决策研判', lastLow.body.agent_id === 'ag-decision', `agent_id=${lastLow.body.agent_id}`);
+
+  // T6d 工程部默认解析到工程问答（专属 agent 矩阵）
+  await qa(tokCao, '/api/v1/agent-chat/s8b', { query: '项目进度如何' });
+  const lastCao = await lastBody();
+  check('T6d 工程部默认解析到工程问答', lastCao.body.agent_id === 'ag-eng', `agent_id=${lastCao.body.agent_id}`);
+
+  // T6e 安全员默认解析到安全问答（专属 agent 矩阵）
+  await qa(tokXiong, '/api/v1/agent-chat/s8c', { query: '项目进度如何' });
+  const lastXiongD = await lastBody();
+  check('T6e 安全员默认解析到安全问答', lastXiongD.body.agent_id === 'ag-safety', `agent_id=${lastXiongD.body.agent_id}`);
 
   // T7a 全量角色（指挥长 kbAll）不过滤，kb-1/kb-2 原样透传
   await qa(tokNing, '/api/v1/knowledge-chat/s9', { query: '项目进度如何', knowledge_base_ids: ['kb-1', 'kb-2'], channel: 'web' });
