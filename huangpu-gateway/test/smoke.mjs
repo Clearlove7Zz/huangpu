@@ -111,7 +111,7 @@ try {
   check('T2 无令牌访问 401', noTok.status === 401, noTok.text.slice(0, 60));
 
   // T3a 安全员问利润 403（上游不被触碰）
-  const deny = await qa(tokXiong, '/api/v1/knowledge-chat/s1', { query: '新联01钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'] });
+  const deny = await qa(tokXiong, '/api/v1/knowledge-chat/s1', { query: '镇龙东F10钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'] });
   check('T3a 安全员问利润被 403 拦截', deny.status === 403 && deny.text.includes('网关拦截'), deny.text.slice(0, 80));
 
   // T3b 安全员指定利润推演智能体（名称不对其可见）→ 403 deny_agent
@@ -120,28 +120,28 @@ try {
 
   // T4 商务部问利润（agent-chat，默认智能体按名称解析为利润推演智能体）：
   // 上游真实 tool_call 透传 + 对账 pass
-  const ok = await qa(tokAI, '/api/v1/agent-chat/s2', { query: '新联01钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'], channel: 'web' });
+  const ok = await qa(tokAI, '/api/v1/agent-chat/s2', { query: '镇龙东F10钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'], channel: 'web' });
   check('T4a 上游真实引擎 tool_call 透传', ok.text.includes(`"tool_name":"${ENGINE_TOOL}"`), `HTTP ${ok.status}`);
   check('T4b 对账 pass（引擎已参与）', ok.text.includes('18.46%') && ok.text.includes('"verdict":"pass"') && ok.text.includes('流程对账通过'));
   const lastDefault = await lastBody();
   check('T4c 默认智能体按名称解析', lastDefault.body.agent_id === 'ag-profit', `agent_id=${lastDefault.body.agent_id}`);
 
   // T5 伪造数字：无任何工具调用 → reject + 引擎兜底答案（PRD §7.3 原文）
-  const fab = await qa(tokAI, '/api/v1/agent-chat/s3', { query: '伪造测试：新联01钢筋涨8%利润率多少', agent_id: 'ag-profit', knowledge_base_ids: ['kb-1'] });
+  const fab = await qa(tokAI, '/api/v1/agent-chat/s3', { query: '伪造测试：镇龙东F10钢筋涨8%利润率多少', agent_id: 'ag-profit', knowledge_base_ids: ['kb-1'] });
   check(
     'T5 无引擎调用即拒收 + 引擎兜底',
-    fab.text.includes('25.3%') && fab.text.includes('"verdict":"reject"') && fab.text.includes('engine_answer') && fab.text.includes('18.46%'),
+    fab.text.includes('25.3%') && fab.text.includes('"verdict":"reject"') && fab.text.includes('engine_answer') && fab.text.includes('14.29%'),
   );
 
   // T5b 仅 KB 工具（knowledge_search）不算引擎参与 → reject（按名匹配回归锁）
-  const kbOnly = await qa(tokAI, '/api/v1/agent-chat/s4', { query: '仅KB工具：新联01钢筋涨8%利润率多少', agent_id: 'ag-profit', knowledge_base_ids: ['kb-1'] });
+  const kbOnly = await qa(tokAI, '/api/v1/agent-chat/s4', { query: '仅KB工具：镇龙东F10钢筋涨8%利润率多少', agent_id: 'ag-profit', knowledge_base_ids: ['kb-1'] });
   check(
     'T5b knowledge_search 不算引擎参与 → reject',
     kbOnly.text.includes('"tool_name":"knowledge_search"') && kbOnly.text.includes('"verdict":"reject"'),
   );
 
   // T5c 利润问题但回答无任何数字 → na（不回写对账横幅）
-  const noNum = await qa(tokAI, '/api/v1/agent-chat/s5', { query: '新联01利润率受什么因素影响（无数）', agent_id: 'ag-profit', knowledge_base_ids: ['kb-1'] });
+  const noNum = await qa(tokAI, '/api/v1/agent-chat/s5', { query: '镇龙东F10利润率受什么因素影响（无数）', agent_id: 'ag-profit', knowledge_base_ids: ['kb-1'] });
   check('T5c 无数字回答不发出对账横幅', !noNum.text.includes('gateway_audit'), noNum.text.slice(-120).replace(/\n/g, ' '));
 
   // T6a 指挥长用白名单外内置智能体 → 403
