@@ -136,7 +136,7 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
       let verdict = reconcile({ answerText: tap.answerText, engine, engineToolCalled: engineTools.length > 0 });
       // 口径类查询（红线/阈值定义）豁免对账：口径值是知识库静态数据而非引擎产出，
       // 数值铁律只约束"推演/当前利润值"，不约束"口径定义是什么"（安全员放行的配套）。
-      if (verdict.verdict === 'reject' && !engineToolCalled) {
+      if (verdict.verdict === 'reject' && engineTools.length === 0) {
         const q = String(query ?? '');
         const isPolicyQuery = /红线|口径|阈值|安全边际/.test(q) && !/我的|本项目利润率|当前利润率|利润率多少|利润率降到|利润率变为|会破|跌破/.test(q);
         if (isPolicyQuery) verdict = { verdict: 'na', reason: 'policy_query_kb_answer' };
