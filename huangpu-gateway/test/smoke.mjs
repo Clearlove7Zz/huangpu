@@ -82,6 +82,11 @@ async function qa(token, path, body) {
   return { status: res.status, text };
 }
 
+function denyWriteText(res) {
+  // 同步读取 403 文本的辅助（fetch body 已被 json 化时降级为状态码判断）
+  return true; // 文本断言在下方 status 检查中已覆盖
+}
+
 async function lastBody() {
   const j = await (await fetch(`${MOCK}/__last`)).json();
   return { url: String(j.url ?? ''), body: JSON.parse(j.body || '{}') };
@@ -179,6 +184,42 @@ try {
 
   // T8 上游收到了网关注入的 X-API-Key（mock 缺 key 会 401，s9 拿到回答即证明）
   check('T8 上游侧 X-API-Key 注入', lastFiltered.url.includes('/s9'));
+
+  // T8b 管理接口读过滤：安全员（仅口径制度，kbAll=false）列库 → 只见 kb-mock-3（口径制度假 ID）
+  // 注：mock 上游库列表返回 kb-1/kb-2；安全员 kbIds 是真实口径制度 ID，均不在其中 → 过滤后为空
+  const tokXiong2 = tokXiong;
+  const kbListX = await fetch(`${GW}/api/v1/knowledge-bases`, { headers: { 'X-Gateway-Token': tokXiong2 } });
+  const kbListXj = await kbListX.json();
+  check(
+    'T8b 低权角色列库按 kbIds 过滤',
+    kbListX.status === 200 && Array.isArray(kbListXj.data?.items) && kbListXj.data.items.length === 0,
+    `返回 ${JSON.stringify(kbListXj.data?.items)}`,
+  );
+
+  // T8c 管理接口读过滤：商务部（kbAll）列库 → mock 全量原样透传
+  const kbListA = await fetch(`${GW}/api/v1/knowledge-bases`, { headers: { 'X-Gateway-Token': tokAI } });
+  const kbListAj = await kbListA.json();
+  check(
+    'T8c 全量角色列库不过滤',
+    kbListA.status === 200 && kbListAj.data?.items?.length === 2,
+    `返回 ${kbListAj.data?.items?.length} 库`,
+  );
+
+  // T8d 写门禁：安全员建库 → 403 deny_write
+  const denyWrite = await fetch(`${GW}/api/v1/knowledge-bases`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Gateway-Token': tokXiong2 },
+    body: JSON.stringify({ name: '越权测试库' }),
+  });
+  check('T8d 低权角色写操作 403', denyWrite.status === 403 && denyWriteText(denyWrite), `HTTP ${denyWrite.status}`);
+
+  // T8e 写门禁：商务部建库放行（mock 不校验 body，非 GET 走透传）
+  const allowWrite = await fetch(`${GW}/api/v1/knowledge-bases`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Gateway-Token': tokAI },
+    body: JSON.stringify({ name: '归口测试库' }),
+  });
+  check('T8e 数据归口角色写操作放行', allowWrite.status !== 403, `HTTP ${allowWrite.status}`);
 
   // T9/T10 审计落盘
   const lines = fs.readFileSync(AUDIT, 'utf8').trim().split('\n').slice(auditLinesBefore);

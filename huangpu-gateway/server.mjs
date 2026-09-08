@@ -229,6 +229,36 @@ const server = http.createServer(async (req, res) => {
       await handleQa(req, res, { payload, scope, path: p });
       return;
     }
+
+    // —— 管理接口强制（RBAC 方案 A：kb 白名单之外还有库管理权与列表读过滤）——
+    // 写操作门禁：库/文档/智能体等管理写操作仅 kbWrite 角色放行
+    const WRITE_RE = /^\/api\/v1\/(knowledge-bases|knowledge\b|knowledge\/|agents\b)/;
+    if (WRITE_RE.test(p) && req.method !== 'GET') {
+      if (!scope.kbWrite) {
+        audit({ action: 'deny_write', user: payload.name, role: payload.role, path: p, method: req.method });
+        sendJson(res, 403, { error: `网关拦截：角色「${payload.role}」无知识库管理权限，请联系商务部/财务部` });
+        return;
+      }
+    }
+    // 读过滤：库列表按 kbIds 收窄（kbAll 原样透传）
+    if (req.method === 'GET' && p === '/api/v1/knowledge-bases' && !scope.kbAll) {
+      const allow = Array.isArray(scope.kbIds) ? scope.kbIds : [];
+      const raw = await upstreamJson(TARGET, 'GET', '/api/v1/knowledge-bases?page=1&page_size=100');
+      const items = (raw?.data?.items ?? raw?.data ?? []).filter((kb) => allow.includes(String(kb.id)));
+      sendJson(res, 200, { success: true, data: { items }, page: 1, page_size: 100, total: items.length });
+      return;
+    }
+    // 读门禁：单库文档列表/详情——库不在角色 kbIds 内（且非 kbAll）一律 403
+    const kbRead = p.match(/^\/api\/v1\/knowledge-bases\/([0-9a-f-]{36})(\/|$)/);
+    if (req.method === 'GET' && kbRead && !scope.kbAll) {
+      const allow = Array.isArray(scope.kbIds) ? scope.kbIds : [];
+      if (!allow.includes(kbRead[1])) {
+        audit({ action: 'deny_kb_read', user: payload.name, role: payload.role, path: p });
+        sendJson(res, 403, { error: `网关拦截：角色「${payload.role}」无该知识库访问权限` });
+        return;
+      }
+    }
+
     proxyPassthrough({ clientReq: req, clientRes: res, target: TARGET, path: p + u.search });
     return;
   }

@@ -40,7 +40,7 @@ http
       }
       if (req.url === '/api/v1/knowledge-bases') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: [{ id: 'kb-1', name: '项目文档库' }, { id: 'kb-2', name: '成本利润库' }] }));
+        res.end(JSON.stringify({ data: { items: [{ id: 'kb-1', name: '项目文档库' }, { id: 'kb-2', name: '成本利润库' }] }, page: 1, page_size: 100, total: 2 }));
         return;
       }
       if (req.url === '/api/v1/agents') {

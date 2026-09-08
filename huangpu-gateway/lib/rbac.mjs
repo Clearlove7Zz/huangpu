@@ -1,14 +1,17 @@
 /**
- * 角色权限模型（服务端版）——从 huangpu-react/src/config/rbac.ts 移植并扩展。
- * 前端 rbac.ts 仅负责界面过滤（可被篡改）；真正的强制在网关：本文件的
- * agentIds / agentNameKeywords / kbIds / canAskProfit 是越权拦截的依据。两处需保持一致。
+ * 角色权限模型（服务端版，单一事实源）——登录/取 me 时整包 scope 下发给前端，
+ * 前端只做界面呈现，不再本地重算矩阵（rbac.ts 仅保留类型与兜底）。
  *
- * 自定义智能体（如「利润推演智能体」）的 ID 由 WeKnora 生成，库重建后会漂移，
- * 故按名称关键词匹配；内置智能体 ID 固定，按 ID 白名单。
+ * 授权模型：角色 → {
+ *   kbIds / kbAll        知识库可见范围（显式 ID 白名单；新建库默认不可见，申请制）
+ *   kbWrite              库/文档管理权（建库、删库、上传、改文档；仅数据归口角色）
+ *   pages                可见页面 nav（菜单 + 路由守卫共用，替代前端 mock nav）
+ *   agentIds / agentNameKeywords / defaultAgentId / defaultAgentName
+ *   canAskProfit         利润类问题总闸
+ * }
  *
- * 知识库授权（2026-09-08 设计定案）：显式库 ID 白名单，不再按库名关键词匹配——
- * 子串匹配依赖命名约定，库名一变权限就漂（"成本月报"→"成本测算"时即失效）。
- * 新建库默认对所有角色不可见，需显式加进角色矩阵（申请制）。
+ * 自定义智能体（利润研判/决策研判）ID 由 WeKnora 生成、会漂移，按名称关键词
+ * 匹配；内置智能体 ID 固定，按 ID 白名单。
  */
 
 export const HIGH_PRIV_AGENTS = ['builtin-quick-answer', 'builtin-smart-reasoning', 'builtin-data-analyst'];
@@ -30,23 +33,35 @@ export const KB_IDS = {
 
 export const KB_ALL = Object.keys(KB_IDS);
 
+/** 页面 nav 常量（与前端路由 key 对齐） */
+export const PAGES = {
+  biz: ['dashboard', 'project', 'decision-system', 'progress-system', 'design-control', 'documents', 'work-mgmt', 'cost-system', 'material', 'supplier-system', 'cashflow', 'reports', 'sync'],
+  leader: ['dashboard', 'project', 'decision-system'],
+  eng: ['dashboard', 'project', 'decision-system', 'progress-system', 'design-control', 'documents', 'work-mgmt', 'risk-system', 'safety-log', 'reports', 'sync'],
+  coord: ['dashboard', 'project', 'decision-system', 'documents', 'work-mgmt', 'coordination', 'reports', 'sync'],
+  // 安全员：无 documents 页——与其"仅口径制度库"的知识库授权对齐（原则性修正）
+  safety: ['dashboard', 'project', 'progress-system', 'risk-system', 'safety-log', 'reports', 'sync'],
+};
+
 export const ROLE_RBAC = {
-  '指挥部-商务部': { kbAll: true, kbIds: KB_ALL, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
-  '指挥部-财务部': { kbAll: true, kbIds: KB_ALL, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
-  '全权限测试账号': { kbAll: true, kbIds: KB_ALL, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
-  // 低权限角色可选利润推演智能体（可见可选），默认仍为快速问答
-  '股份领导/指挥长': { kbAll: true, kbIds: KB_ALL, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME, DECISION_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', defaultAgentName: DECISION_AGENT_NAME, canAskProfit: true },
-  // 工程技术部：合同/成本/口径可见，商务与资金不可见
-  '指挥部-工程技术部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
-  // 外协部：合同/商务/资金可见，成本与口径不可见
-  '指挥部-外协部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', 'a00aaf1f-bf35-4802-9548-508263452f55'], agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
-  // 安全员不可问利润（PRD REQ-06 六角色权限控制），利润推演智能体对其不可见；仅看口径制度
-  '安全员': { kbAll: false, kbIds: ['da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [], defaultAgentId: 'builtin-quick-answer', canAskProfit: false },
+  '指挥部-商务部': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
+  '指挥部-财务部': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
+  '全权限测试账号': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
+  // 指挥长：全域可见、库只读（kbWrite:false）、默认决策研判（结论式输出）
+  '股份领导/指挥长': { kbAll: true, kbIds: KB_ALL, kbWrite: false, pages: PAGES.leader, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME, DECISION_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', defaultAgentName: DECISION_AGENT_NAME, canAskProfit: true },
+  // 工程技术部：合同/成本/口径可见，商务与资金不可见；库只读
+  '指挥部-工程技术部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], kbWrite: false, pages: PAGES.eng, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
+  // 外协部：合同/商务/资金可见，成本与口径不可见；库只读
+  '指挥部-外协部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', 'a00aaf1f-bf35-4802-9548-508263452f55'], kbWrite: false, pages: PAGES.coord, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
+  // 安全员不可问利润（PRD REQ-06 六角色权限控制），利润研判对其不可见；仅口径制度库、无文档管理页
+  '安全员': { kbAll: false, kbIds: ['da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], kbWrite: false, pages: PAGES.safety, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [], defaultAgentId: 'builtin-quick-answer', canAskProfit: false },
 };
 
 const FALLBACK = {
   kbAll: false,
   kbIds: ['da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'],
+  kbWrite: false,
+  pages: ['dashboard', 'project', 'decision-system'],
   agentIds: LOW_PRIV_AGENTS,
   agentNameKeywords: [],
   defaultAgentId: 'builtin-quick-answer',
