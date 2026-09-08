@@ -85,9 +85,12 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
   const query = String(body.query ?? '');
   const t0 = Date.now();
 
-  // ① 越权拦截：无利润权限的角色问利润/推演类问题（PRD：安全员不可问利润）
+  // ① 越权拦截：无利润权限的角色问利润/推演类问题（PRD：安全员不可问利润）。
+  //    例外：红线/口径定义类查询放行——口径值本身在安全员可见的口径制度库内，
+  //    拦截会误伤（"目标利润率红线是多少"实测被拒的教训 2026-09-08）。
   const engine = engineForQuery(query);
-  if (engine.isProfit && !scope.canAskProfit) {
+  const isPolicyQuery = /红线|口径|阈值|安全边际/.test(query) && !/我的|本项目利润率|当前利润率|利润率多少|利润率降到|利润率变为|会破|跌破/.test(query);
+  if (engine.isProfit && !scope.canAskProfit && !isPolicyQuery) {
     audit({ action: 'deny_profit', user: payload.name, role: payload.role, query });
     sendJson(clientRes, 403, { error: `网关拦截：角色「${payload.role}」无利润数据权限，利润类问题请联系商务部/财务部` });
     return;
@@ -130,7 +133,14 @@ async function handleQa(clientReq, clientRes, { payload, scope, path: qaPath }) 
     bodyStr: JSON.stringify(body),
     onComplete: async ({ tap }) => {
       const engineTools = (tap.toolNames ?? []).filter((n) => ENGINE_TOOL_RE.test(n));
-      const verdict = reconcile({ answerText: tap.answerText, engine, engineToolCalled: engineTools.length > 0 });
+      let verdict = reconcile({ answerText: tap.answerText, engine, engineToolCalled: engineTools.length > 0 });
+      // 口径类查询（红线/阈值定义）豁免对账：口径值是知识库静态数据而非引擎产出，
+      // 数值铁律只约束"推演/当前利润值"，不约束"口径定义是什么"（安全员放行的配套）。
+      if (verdict.verdict === 'reject' && !engineToolCalled) {
+        const q = String(query ?? '');
+        const isPolicyQuery = /红线|口径|阈值|安全边际/.test(q) && !/我的|本项目利润率|当前利润率|利润率多少|利润率降到|利润率变为|会破|跌破/.test(q);
+        if (isPolicyQuery) verdict = { verdict: 'na', reason: 'policy_query_kb_answer' };
+      }
       audit({
         action: 'chat',
         user: payload.name,
