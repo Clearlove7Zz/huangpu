@@ -21,10 +21,10 @@ const H = { 'X-API-Key': process.env.WEKNORA_API_KEY || '' };
 /** 目录 → 知识库 映射（目录名=docs/ 下子目录，库名=WebUI 里建的库名） */
 const TARGETS = [
   { dir: '合同资料', kb: '合同资料' },
-  { dir: '成本月报', kb: '成本月报' },
-  { dir: '综合月报', kb: '综合月报' },
-  { dir: '制度文件', kb: '制度文件' },
-  { dir: '现金流库', kb: '现金流库' },
+  { dir: '成本月报', kb: '成本测算' },
+  { dir: '综合月报', kb: '商务概况' },
+  { dir: '制度文件', kb: '口径制度' },
+  { dir: '现金流库', kb: '资金税务' },
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --src docs-real：灌真实标前测算文档（gen-real.py 生成物）；默认 docs/（demo）

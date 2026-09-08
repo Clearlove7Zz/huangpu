@@ -27,10 +27,10 @@ const EMBED_MODEL_ID = 'f9ee7230-6ea4-43ab-9a13-82333115872e';    // qwen3.7-tex
 
 const KB = {
   contract: { id: '14bcd117-9352-42f8-a824-b47dabbb2add', name: '合同资料' },
-  cost: { id: 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', name: '成本月报' },
-  overview: { id: 'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', name: '综合月报' },
-  policy: { id: 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed', name: '制度文件' },
-  cashflow: { id: 'a00aaf1f-bf35-4802-9548-508263452f55', name: '现金流库' },
+  cost: { id: 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', name: '成本测算' },
+  overview: { id: 'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', name: '商务概况' },
+  policy: { id: 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed', name: '口径制度' },
+  cashflow: { id: 'a00aaf1f-bf35-4802-9548-508263452f55', name: '资金税务' },
 };
 
 const NORM = '命名归一（硬性）：项目实体一律命名为「镇龙东F10」（项目全称写入其 attributes，禁止把全称/合同名/简称变体单独建成实体）；金额类实体命名带数值（如「预估合同价12.7317亿」）；文档实体名与文档标题一致。\n';
