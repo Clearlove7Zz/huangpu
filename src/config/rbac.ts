@@ -30,7 +30,10 @@ const HIGH_PRIV_AGENTS = ['builtin-quick-answer', 'builtin-smart-reasoning', 'bu
 const LOW_PRIV_AGENTS = ['builtin-quick-answer'];
 
 /** 利润推演智能体（引擎 MCP 工具承载者，网关同名强制） */
-export const PROFIT_AGENT_NAME = '利润推演智能体';
+/** 利润研判（原利润推演智能体） */
+export const PROFIT_AGENT_NAME = '利润研判';
+/** 决策研判（指挥长专属默认，结论式输出；仅指挥长可见） */
+export const DECISION_AGENT_NAME = '决策研判';
 
 const KB_ALL = Object.keys(KB_IDS);
 
@@ -59,7 +62,7 @@ export const ROLE_RBAC: Record<string, RbacScope> = {
   '股份领导/指挥长': {
     kbIds: KB_ALL,
     agentIds: LOW_PRIV_AGENTS,
-    agentNameKeywords: [PROFIT_AGENT_NAME],
+    agentNameKeywords: [PROFIT_AGENT_NAME, DECISION_AGENT_NAME], defaultAgentName: DECISION_AGENT_NAME,
     defaultAgentId: 'builtin-quick-answer',
   },
   '指挥部-工程技术部': {
