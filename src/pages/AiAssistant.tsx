@@ -570,7 +570,9 @@ useEffect(() => {
     setAssistantState('understanding');
     const handlers = makeStreamHandlers(sessionId, aiMsg.id);
     void chatWithRag(query, activeRagSessionId ?? active.ragSessionId ?? null, handlers.chatCallbacks, {
-      knowledgeBaseIds: selectedKbIds,
+      // 空 kbIds 时不传该字段会退化为 agent 全库？否——agent 侧已绑库（库绑定即权限），
+      // 显式传空数组会被上游视为"未指定"，故此处仅在非空时传，空时依赖 agent 库绑定
+      ...(selectedKbIds.length ? { knowledgeBaseIds: selectedKbIds } : {}),
       agentId: selectedAgentId || undefined,
       agentEnabled: selectedAgentId !== 'builtin-quick-answer',
       attachmentIds: attachments.filter((file) => file.remoteId && file.status !== 'failed').map((file) => file.remoteId as string),
@@ -622,7 +624,9 @@ useEffect(() => {
     }));
     const handlers = makeStreamHandlers(sessionId, message.id);
     void chatWithRag(query, activeRagSessionId ?? active.ragSessionId ?? null, handlers.chatCallbacks, {
-      knowledgeBaseIds: selectedKbIds,
+      // 空 kbIds 时不传该字段会退化为 agent 全库？否——agent 侧已绑库（库绑定即权限），
+      // 显式传空数组会被上游视为"未指定"，故此处仅在非空时传，空时依赖 agent 库绑定
+      ...(selectedKbIds.length ? { knowledgeBaseIds: selectedKbIds } : {}),
       agentId: selectedAgentId || undefined,
       agentEnabled: selectedAgentId !== 'builtin-quick-answer',
     }).then(async (outcome) => {

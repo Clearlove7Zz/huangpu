@@ -238,6 +238,7 @@ export default function DecisionSystem() {
       {
         maxOutputHint:
           '请按要求的报告结构完整输出全部八个部分（综合研判、利润率影响、进度影响、质量与安全、现金流影响、成本分解、AI 建议措施、数据引用溯源），每部分 2-4 句，不得省略任何部分，总字数控制在 900 字以内。',
+        // 空 kbIds 时不传（undefined 会退化全库），依赖 agent 侧库绑定兜底
         knowledgeBaseIds: ragScopeRef.current.kbIds.length ? ragScopeRef.current.kbIds : undefined,
         agentId: ragScopeRef.current.agentId || undefined,
       },

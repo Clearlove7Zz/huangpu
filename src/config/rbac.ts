@@ -67,21 +67,21 @@ export const ROLE_RBAC: Record<string, RbacScope> = {
   },
   '指挥部-工程技术部': {
     kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'],
-    agentIds: LOW_PRIV_AGENTS,
-    agentNameKeywords: [PROFIT_AGENT_NAME],
-    defaultAgentId: 'builtin-quick-answer',
+    agentIds: [],
+    agentNameKeywords: [ENG_AGENT_NAME],
+    defaultAgentName: ENG_AGENT_NAME, defaultAgentId: '',
   },
   '指挥部-外协部': {
     kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', 'a00aaf1f-bf35-4802-9548-508263452f55'],
-    agentIds: LOW_PRIV_AGENTS,
-    agentNameKeywords: [PROFIT_AGENT_NAME],
-    defaultAgentId: 'builtin-quick-answer',
+    agentIds: [],
+    agentNameKeywords: [COORD_AGENT_NAME],
+    defaultAgentName: COORD_AGENT_NAME, defaultAgentId: '',
   },
   '安全员': {
     kbIds: ['da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'],
-    agentIds: LOW_PRIV_AGENTS,
-    agentNameKeywords: [],
-    defaultAgentId: 'builtin-quick-answer',
+    agentIds: [],
+    agentNameKeywords: [SAFETY_AGENT_NAME],
+    defaultAgentName: SAFETY_AGENT_NAME, defaultAgentId: '',
   },
 };
 
