@@ -14,8 +14,10 @@
 export const HIGH_PRIV_AGENTS = ['builtin-quick-answer', 'builtin-smart-reasoning', 'builtin-data-analyst'];
 export const LOW_PRIV_AGENTS = ['builtin-quick-answer'];
 
-/** 利润推演智能体的名称关键词（网关按上游 agents 列表解析为 ID） */
-export const PROFIT_AGENT_NAME = '利润推演智能体';
+/** 利润研判（原利润推演智能体）的名称关键词（网关按上游 agents 列表解析为 ID） */
+export const PROFIT_AGENT_NAME = '利润研判';
+/** 决策研判（指挥长专属默认，结论式输出；仅指挥长可见） */
+export const DECISION_AGENT_NAME = '决策研判';
 
 /** 在册知识库 ID ↔ 名称对照（库改名不动授权；换库/建库时同步本表与角色矩阵） */
 export const KB_IDS = {
@@ -33,7 +35,7 @@ export const ROLE_RBAC = {
   '指挥部-财务部': { kbAll: true, kbIds: KB_ALL, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
   '全权限测试账号': { kbAll: true, kbIds: KB_ALL, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
   // 低权限角色可选利润推演智能体（可见可选），默认仍为快速问答
-  '股份领导/指挥长': { kbAll: true, kbIds: KB_ALL, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
+  '股份领导/指挥长': { kbAll: true, kbIds: KB_ALL, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME, DECISION_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', defaultAgentName: DECISION_AGENT_NAME, canAskProfit: true },
   // 工程技术部：合同/成本/口径可见，商务与资金不可见
   '指挥部-工程技术部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
   // 外协部：合同/商务/资金可见，成本与口径不可见

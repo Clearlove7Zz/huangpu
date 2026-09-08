@@ -50,7 +50,8 @@ http
             { id: 'builtin-quick-answer', name: '快速问答', is_builtin: true, config: { agent_mode: 'quick-answer' } },
             { id: 'builtin-smart-reasoning', name: '智能推理', is_builtin: true, config: { agent_mode: 'smart-reasoning' } },
             { id: 'builtin-data-analyst', name: '数据分析师', is_builtin: true, config: { agent_mode: 'smart-reasoning' } },
-            { id: 'ag-profit', name: '利润推演智能体', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
+            { id: 'ag-profit', name: '利润研判', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
+            { id: 'ag-decision', name: '决策研判', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
           ],
         }));
         return;

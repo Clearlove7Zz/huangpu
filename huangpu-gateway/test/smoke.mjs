@@ -5,7 +5,7 @@
  *   健康检查 / 登录 / 无令牌 401 / 安全员问利润 403 / 安全员用利润智能体 403 /
  *   上游真实 tool_call 透传 + 对账 pass / 伪造数字（无工具调用）reject + 引擎兜底 /
  *   仅 KB 工具（knowledge_search）不算引擎参与 → reject（按名匹配回归）/
- *   无数字 na / 默认智能体按名称解析（利润推演智能体）/ 智能体越权 403 /
+ *   无数字 na / 默认智能体按名称解析（利润研判）/ 智能体越权 403 /
  *   KB 白名单过滤 / 审计落盘。
  */
 
@@ -18,6 +18,8 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const GW = 'http://127.0.0.1:18090';
 const MOCK = 'http://127.0.0.1:18080';
 const ENGINE_TOOL = 'mcp_profit_engine_run_scenario';
+const PROFIT_AGENT_NAME = '利润研判';
+const DECISION_AGENT_NAME = '决策研判';
 
 let passCount = 0;
 let failCount = 0;
@@ -114,11 +116,11 @@ try {
   const deny = await qa(tokXiong, '/api/v1/knowledge-chat/s1', { query: '镇龙东F10钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'] });
   check('T3a 安全员问利润被 403 拦截', deny.status === 403 && deny.text.includes('网关拦截'), deny.text.slice(0, 80));
 
-  // T3b 安全员指定利润推演智能体（名称不对其可见）→ 403 deny_agent
+  // T3b 安全员指定利润研判（名称不对其可见）→ 403 deny_agent
   const denyProfitAgent = await qa(tokXiong, '/api/v1/agent-chat/s1b', { query: '项目进度如何', agent_id: 'ag-profit' });
-  check('T3b 安全员用利润推演智能体 403', denyProfitAgent.status === 403 && denyProfitAgent.text.includes('网关拦截'));
+  check('T3b 安全员用利润研判 403', denyProfitAgent.status === 403 && denyProfitAgent.text.includes('网关拦截'));
 
-  // T4 商务部问利润（agent-chat，默认智能体按名称解析为利润推演智能体）：
+  // T4 商务部问利润（agent-chat，默认智能体按名称解析为利润研判）：
   // 上游真实 tool_call 透传 + 对账 pass
   const ok = await qa(tokAI, '/api/v1/agent-chat/s2', { query: '镇龙东F10钢筋涨8%利润率多少', knowledge_base_ids: ['kb-1'], channel: 'web' });
   check('T4a 上游真实引擎 tool_call 透传', ok.text.includes(`"tool_name":"${ENGINE_TOOL}"`), `HTTP ${ok.status}`);
@@ -148,14 +150,14 @@ try {
   const denyAgent = await qa(tokNing, '/api/v1/agent-chat/s6', { query: '项目进度如何', agent_id: 'builtin-smart-reasoning' });
   check('T6a 智能体越权 403', denyAgent.status === 403 && denyAgent.text.includes('网关拦截'));
 
-  // T6b 指挥长用利润推演智能体（名称匹配放行）
+  // T6b 指挥长用利润研判（名称匹配放行）
   const lowPrivProfit = await qa(tokNing, '/api/v1/agent-chat/s7', { query: '项目进度如何', agent_id: 'ag-profit' });
-  check('T6b 低权限角色可用利润推演智能体', lowPrivProfit.status === 200, lowPrivProfit.text.slice(0, 80));
+  check('T6b 低权限角色可用利润研判', lowPrivProfit.status === 200, lowPrivProfit.text.slice(0, 80));
 
   // T6c 指挥长 agent-chat 未指定智能体 → 默认 builtin-quick-answer
   await qa(tokNing, '/api/v1/agent-chat/s8', { query: '项目进度如何' });
   const lastLow = await lastBody();
-  check('T6c 低权限默认智能体不变', lastLow.body.agent_id === 'builtin-quick-answer', `agent_id=${lastLow.body.agent_id}`);
+  check('T6c 指挥长默认解析到决策研判', lastLow.body.agent_id === 'ag-decision', `agent_id=${lastLow.body.agent_id}`);
 
   // T7a 全量角色（指挥长 kbAll）不过滤，kb-1/kb-2 原样透传
   await qa(tokNing, '/api/v1/knowledge-chat/s9', { query: '项目进度如何', knowledge_base_ids: ['kb-1', 'kb-2'], channel: 'web' });
