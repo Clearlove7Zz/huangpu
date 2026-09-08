@@ -14,13 +14,19 @@
  * 匹配；内置智能体 ID 固定，按 ID 白名单。
  */
 
-export const HIGH_PRIV_AGENTS = ['builtin-quick-answer', 'builtin-smart-reasoning', 'builtin-data-analyst'];
-export const LOW_PRIV_AGENTS = ['builtin-quick-answer'];
+/** 内置智能体不再分配给任何角色（builtin-quick-answer 为 kb all 全库检索，
+ *  分配给角色即绕开库授权；管理员可从 WebUI 直接使用） */
+export const HIGH_PRIV_AGENTS = [];
+export const LOW_PRIV_AGENTS = [];
 
 /** 利润研判（原利润推演智能体）的名称关键词（网关按上游 agents 列表解析为 ID） */
 export const PROFIT_AGENT_NAME = '利润研判';
 /** 决策研判（指挥长专属默认，结论式输出；仅指挥长可见） */
 export const DECISION_AGENT_NAME = '决策研判';
+/** 角色专属检索问答（各角色一个，库绑定=角色 kbIds，agent 层与网关层双重强制） */
+export const ENG_AGENT_NAME = '工程问答';
+export const COORD_AGENT_NAME = '外协问答';
+export const SAFETY_AGENT_NAME = '安全问答';
 
 /** 在册知识库 ID ↔ 名称对照（库改名不动授权；换库/建库时同步本表与角色矩阵） */
 export const KB_IDS = {
@@ -44,17 +50,17 @@ export const PAGES = {
 };
 
 export const ROLE_RBAC = {
-  '指挥部-商务部': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
-  '指挥部-财务部': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
-  '全权限测试账号': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: HIGH_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-smart-reasoning', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
+  '指挥部-商务部': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: [], agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: '', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
+  '指挥部-财务部': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: [], agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: '', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
+  '全权限测试账号': { kbAll: true, kbIds: KB_ALL, kbWrite: true, pages: PAGES.biz, agentIds: [], agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: '', defaultAgentName: PROFIT_AGENT_NAME, canAskProfit: true },
   // 指挥长：全域可见、库只读（kbWrite:false）、默认决策研判（结论式输出）
-  '股份领导/指挥长': { kbAll: true, kbIds: KB_ALL, kbWrite: false, pages: PAGES.leader, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME, DECISION_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', defaultAgentName: DECISION_AGENT_NAME, canAskProfit: true },
+  '股份领导/指挥长': { kbAll: true, kbIds: KB_ALL, kbWrite: false, pages: PAGES.leader, agentIds: [], agentNameKeywords: [PROFIT_AGENT_NAME, DECISION_AGENT_NAME], defaultAgentId: '', defaultAgentName: DECISION_AGENT_NAME, canAskProfit: true },
   // 工程技术部：合同/成本/口径可见，商务与资金不可见；库只读
-  '指挥部-工程技术部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], kbWrite: false, pages: PAGES.eng, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
+  '指挥部-工程技术部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'c3ee40ea-0815-43d8-b52f-783dc9c1f5d2', 'da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], kbWrite: false, pages: PAGES.eng, agentIds: [], agentNameKeywords: [ENG_AGENT_NAME], defaultAgentId: '', defaultAgentName: ENG_AGENT_NAME, canAskProfit: true },
   // 外协部：合同/商务/资金可见，成本与口径不可见；库只读
-  '指挥部-外协部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', 'a00aaf1f-bf35-4802-9548-508263452f55'], kbWrite: false, pages: PAGES.coord, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [PROFIT_AGENT_NAME], defaultAgentId: 'builtin-quick-answer', canAskProfit: true },
+  '指挥部-外协部': { kbAll: false, kbIds: ['14bcd117-9352-42f8-a824-b47dabbb2add', 'e3ddfa30-84d6-446e-a27e-d2fdf71df7e1', 'a00aaf1f-bf35-4802-9548-508263452f55'], kbWrite: false, pages: PAGES.coord, agentIds: [], agentNameKeywords: [COORD_AGENT_NAME], defaultAgentId: '', defaultAgentName: COORD_AGENT_NAME, canAskProfit: true },
   // 安全员不可问利润（PRD REQ-06 六角色权限控制），利润研判对其不可见；仅口径制度库、无文档管理页
-  '安全员': { kbAll: false, kbIds: ['da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], kbWrite: false, pages: PAGES.safety, agentIds: LOW_PRIV_AGENTS, agentNameKeywords: [], defaultAgentId: 'builtin-quick-answer', canAskProfit: false },
+  '安全员': { kbAll: false, kbIds: ['da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'], kbWrite: false, pages: PAGES.safety, agentIds: [], agentNameKeywords: [SAFETY_AGENT_NAME], defaultAgentId: '', defaultAgentName: SAFETY_AGENT_NAME, canAskProfit: false },
 };
 
 const FALLBACK = {
@@ -62,9 +68,10 @@ const FALLBACK = {
   kbIds: ['da5f9793-96cc-4cd5-9fd0-24b1fd95d6ed'],
   kbWrite: false,
   pages: ['dashboard', 'project', 'decision-system'],
-  agentIds: LOW_PRIV_AGENTS,
-  agentNameKeywords: [],
-  defaultAgentId: 'builtin-quick-answer',
+  agentIds: [],
+  agentNameKeywords: [SAFETY_AGENT_NAME],
+  defaultAgentId: '',
+  defaultAgentName: SAFETY_AGENT_NAME,
   canAskProfit: false,
 };
 

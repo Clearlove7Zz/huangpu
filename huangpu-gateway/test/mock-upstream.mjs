@@ -52,6 +52,9 @@ http
             { id: 'builtin-data-analyst', name: '数据分析师', is_builtin: true, config: { agent_mode: 'smart-reasoning' } },
             { id: 'ag-profit', name: '利润研判', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
             { id: 'ag-decision', name: '决策研判', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
+            { id: 'ag-eng', name: '工程问答', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
+            { id: 'ag-coord', name: '外协问答', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
+            { id: 'ag-safety', name: '安全问答', is_builtin: false, config: { agent_mode: 'smart-reasoning' } },
           ],
         }));
         return;
