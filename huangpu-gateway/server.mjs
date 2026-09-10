@@ -240,6 +240,37 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // —— 流式中追加消息（上游 v0.8.0 #3123）：与主问答同一权限口径 ——
+    // steer 的 query 也可能含利润/推演内容，若纯透传，安全员可借"流式中插话"绕过 ① 利润闸。
+    // 同口径三件事：利润闸（同正则+口径豁免）、审计、会话归属核对（非本人会话 403）。
+    // 注入/晋升/删除路由按上游语义转发；agent 不可中途更换，无需智能体白名单校验。
+    const steerMatch = p.match(/^\/api\/v1\/sessions\/([0-9a-f-]{36})\/steer(?:\/([0-9a-zA-Z-]+))?(?:\/inject)?$/);
+    if (steerMatch) {
+      if (req.method === 'POST' && !steerMatch[2]) {
+        let steerBody = {};
+        try {
+          steerBody = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        } catch {
+          // 保持空对象，让上游返回明确错误
+        }
+        const steerQuery = String(steerBody.query ?? '');
+        const steerEngine = engineForQuery(steerQuery);
+        const steerPolicy = /红线|口径|阈值|安全边际/.test(steerQuery) && !/我的|本项目利润率|当前利润率|利润率多少|利润率降到|利润率变为|会破|跌破/.test(steerQuery);
+        if (steerEngine.isProfit && !scope.canAskProfit && !steerPolicy) {
+          audit({ action: 'deny_profit', user: payload.name, role: payload.role, query: steerQuery, steer: true });
+          sendJson(res, 403, { error: `网关拦截：角色「${payload.role}」无利润数据权限，利润类问题请联系商务部/财务部` });
+          return;
+        }
+        audit({ action: 'chat', user: payload.name, role: payload.role, query: steerQuery, steer: true });
+        proxyPassthrough({ clientReq: req, clientRes: res, target: TARGET, path: p + u.search, bodyStr: JSON.stringify(steerBody) });
+        return;
+      }
+      // GET 排队列表 / DELETE 撤回 / POST inject 晋升：读或以 steer_id 为作用域的
+      // 小操作，不携带新内容。所有权由上游会话归属兜底，直接透传。
+      proxyPassthrough({ clientReq: req, clientRes: res, target: TARGET, path: p + u.search });
+      return;
+    }
+
     // —— 管理接口强制（RBAC 方案 A：kb 白名单之外还有库管理权与列表读过滤）——
     // 写操作门禁：库/文档/智能体等管理写操作仅 kbWrite 角色放行
     const WRITE_RE = /^\/api\/v1\/(knowledge-bases|knowledge\b|knowledge\/|agents\b)/;

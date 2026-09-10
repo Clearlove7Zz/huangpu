@@ -81,9 +81,15 @@ export function upstreamJson(target, method, path) {
 }
 
 /** 透明转发：请求体直接管道，响应直接管道（GET/POST/DELETE/multipart 通用） */
-export function proxyPassthrough({ clientReq, clientRes, target, path }) {
+export function proxyPassthrough({ clientReq, clientRes, target, path, bodyStr }) {
   const headers = { ...clientReq.headers };
   delete headers.host;
+  // bodyStr 传入说明请求体已被网关消费（读Body 校验后重放），须以新长度重发；
+  // 未传则保持原有逐字节管道透传（content-length 原样保留）
+  if (bodyStr !== undefined) {
+    delete headers['transfer-encoding'];
+    headers['content-length'] = String(Buffer.byteLength(bodyStr));
+  }
   const up = http.request(upstreamOptions(target, clientReq.method, path, headers), (upRes) => {
     clientRes.writeHead(upRes.statusCode, upRes.headers);
     upRes.pipe(clientRes);
@@ -91,7 +97,8 @@ export function proxyPassthrough({ clientReq, clientRes, target, path }) {
   up.on('error', () => sendJson(clientRes, 502, { error: '网关：WeKnora 上游不可达（前端将自动降级本地引擎）' }));
   clientReq.on('error', () => up.destroy());
   clientRes.on('close', () => up.destroy());
-  clientReq.pipe(up);
+  if (bodyStr !== undefined) up.end(bodyStr);
+  else clientReq.pipe(up);
 }
 
 /** 解析一个 SSE 事件块，更新旁路累积器（回答实时透传，此处仅记录供流程对账） */
