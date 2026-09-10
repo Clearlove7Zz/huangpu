@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Drawer, Empty, Input, Tag } from 'antd';
+import { Button, Drawer, Empty, Input, Tag, message as antdMessage } from 'antd';
 import { DeleteOutlined, MessageOutlined, PaperClipOutlined, PlusOutlined, SendOutlined, UserOutlined } from '@ant-design/icons';
 import { abortCurrentChat, chatWithRag } from '../services/chat-service';
 import { ragReady } from '../config/rag-config';
@@ -16,8 +16,8 @@ import AssistantLogo from '../components/AssistantLogo';
 import MarkdownView from '../components/MarkdownView';
 import ThinkingPanel, { type TimelineEvent } from '../components/ThinkingPanel';
 import type { AiAnswer } from '../utils/answer-engine';
-import { continueKnowledgeStream, deleteRemoteSession, listRemoteMessages, renderInlineKbTags } from '../services/rag';
-import type { RagReference, RagStreamEvents, RemoteMessage } from '../services/rag';
+import { continueKnowledgeStream, deleteRemoteSession, listRemoteMessages, renderInlineKbTags, steerSession, promoteSteer, removeSteer } from '../services/rag';
+import type { RagReference, RagStreamEvents, RemoteMessage, SteerQueueItem } from '../services/rag';
 import type { CitationInfo } from '../components/MarkdownView';
 import type { ChatCallbacks } from '../services/chat-service';
 import { createRemoteSession, deleteTemporaryAttachment, getTemporaryAttachment, uploadTemporaryAttachment } from '../services/attachment-service';
@@ -182,6 +182,14 @@ export default function AiAssistant() {
   const timerRef = useRef<number | null>(null);
   /** 当前活跃流的答案节流器（主路径/续流共用，结束时 flush 防丢尾段） */
   const answerThrottleRef = useRef<ReturnType<typeof createStreamThrottle> | null>(null);
+  /** —— 流式中追加消息（steer，对齐上游 v0.8.0 #3123）——
+   *  steerSessionIdRef：流一建立就持有会话 ID（首答生成期间即可 steer）；
+   *  busyRef/steerQueueRef：busy 与排队区的镜像，供异步回调读到新值 */
+  const steerSessionIdRef = useRef('');
+  const busyRef = useRef(false);
+  const steerQueueRef = useRef<SteerQueueItem[]>([]);
+  /** 排队区可见项（流式中发送的消息；注入后从队列移除、落进消息时间线） */
+  const [steerQueue, setSteerQueue] = useState<SteerQueueItem[]>([]);
 
   // active 解析：优先找 activeSessionId；找不到时优先回退到空会话（避免删除老
 // 会话后仍渲染老消息），最后才回退到 sessions 末尾（最近创建的新会话）。
@@ -194,6 +202,9 @@ const active = sessions.find((session) => session.id === activeSessionId)
   useEffect(() => {
     messagesRef.current = active?.messages ?? [];
   }, [active?.messages]);
+  /** busy 与排队区状态镜像（异步回调里读 ref，避免闭包旧值） */
+  useEffect(() => { busyRef.current = busy; }, [busy]);
+  useEffect(() => { steerQueueRef.current = steerQueue; }, [steerQueue]);
 
   /** 引用徽章点击（stable 引用：MarkdownView memo 跳过重渲染后闭包依然正确） */
   const handleCitationClick = useCallback((msgId: number, info: CitationInfo) => {
@@ -308,7 +319,7 @@ useEffect(() => {
     if (incompleteId) {
       const aiMsg: ChatMsg = { id: nextMsgId(), role: 'ai', content: '', streaming: true, timeline: [], startedAt: Date.now() };
       setSessions((current) => current.map((session) => session.id === sessionIdNumber ? { ...session, messages: [...session.messages, aiMsg] } : session));
-      setBusy(true);
+      setBusyNow(true);
       const throttle = createStreamThrottle((chunk) => updateSession(sessionIdNumber, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, source: 'rag', content: message.content + chunk } : message) })));
       answerThrottleRef.current = throttle;
       void continueKnowledgeStream(ragSessionId, incompleteId, {
@@ -332,12 +343,12 @@ useEffect(() => {
         onDone: () => {
           throttle.flush();
           updateSession(sessionIdNumber, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, streaming: false, endedAt: Date.now() } : message) }));
-          setBusy(false);
+          setBusyNow(false);
         },
         onAbort: () => {
           throttle.flush();
           updateSession(sessionIdNumber, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, streaming: false, endedAt: Date.now() } : message) }));
-          setBusy(false);
+          setBusyNow(false);
         },
       });
     }
@@ -384,7 +395,7 @@ useEffect(() => {
         if (timerRef.current) window.clearInterval(timerRef.current);
         updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, content: answer.text, references: answer.references, streaming: false, endedAt: Date.now() } : message) }));
         setAssistantState('done');
-        setBusy(false);
+        setBusyNow(false);
       }
     }, 14);
   };
@@ -442,20 +453,35 @@ useEffect(() => {
   const makeStreamHandlers = (sessionId: number, aiMsgId: number) => {
     let timelineSeq = 0;
     let lastMessageId = '';
+    // steer 注入分叉后流式目标切换到续段消息（闭包变量，flush/patch 读实时值）
+    let currentAiId = aiMsgId;
     // 答案增量节流（50ms 批量上屏）：全文 markdown 重解析是流式卡顿根因
-    const answerThrottle = createStreamThrottle((chunk) => updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, source: 'rag', content: message.content + chunk } : message) })));
+    const answerThrottle = createStreamThrottle((chunk) => updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === currentAiId ? { ...message, source: 'rag', content: message.content + chunk } : message) })));
     answerThrottleRef.current = answerThrottle;
     const patchTimeline = (fn: (events: TimelineEvent[]) => TimelineEvent[]) => {
       updateSession(sessionId, (session) => ({
         ...session,
-        messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, timeline: fn(message.timeline ?? []) } : message),
+        messages: session.messages.map((message) => message.id === currentAiId ? { ...message, timeline: fn(message.timeline ?? []) } : message),
       }));
     };
     const patchMessage = (extra: Partial<ChatMsg>) => {
       updateSession(sessionId, (session) => ({
         ...session,
-        messages: session.messages.map((message) => message.id === aiMsgId ? { ...message, ...extra } : message),
+        messages: session.messages.map((message) => message.id === currentAiId ? { ...message, ...extra } : message),
       }));
+    };
+    /** steer 注入落进时间线：封口当前段 → 插入用户气泡 → 开新续段接流（对齐上游 forkAfterInjectedUser） */
+    const forkForInjected = (info: { steerId: string; content: string; userMessageId?: string; assistantMessageId?: string }) => {
+      updateSession(sessionId, (session) => ({
+        ...session,
+        messages: session.messages.map((m) => m.id === currentAiId ? { ...m, streaming: false, endedAt: Date.now() } : m),
+      }));
+      const userMsg: ChatMsg = { id: nextMsgId(), role: 'user', content: info.content, streaming: false, remoteMessageId: info.userMessageId };
+      const contMsg: ChatMsg = { id: nextMsgId(), role: 'ai', content: '', streaming: true, timeline: [], startedAt: Date.now() };
+      updateSession(sessionId, (session) => ({ ...session, messages: [...session.messages, userMsg, contMsg] }));
+      currentAiId = contMsg.id;
+      // 注入事件带服务端 steer_id；POST 在途时 chip 还挂在 clientId 上，两者都要清
+      if (info.steerId) setSteerQueue((queue) => queue.filter((c) => c.steerId !== info.steerId && c.clientId !== info.steerId));
     };
     const stopTypewriter = () => {
       if (timerRef.current) {
@@ -513,47 +539,196 @@ useEffect(() => {
         }
       },
       onAbort: () => {
-        // 用户主动停止：仅结束当前消息，不触发任何本地兜底
+        // 用户主动停止：仅结束当前消息，不触发任何本地兜底。
+        // 上游语义"停止即停止"：排队中的追加消息一并清空（服务端同样丢弃 backlog）
         stopTypewriter();
         answerThrottle.flush();
         patchMessage({ streaming: false, endedAt: Date.now() });
+        setSteerQueue([]);
         setAssistantState('done');
-        setBusy(false);
+        setBusyNow(false);
       },
       onInterrupted: () => {
         // 意外中断（空闲超时/断网）：结束当前消息并标记 interrupted，界面出现"继续生成"
         stopTypewriter();
         answerThrottle.flush();
         patchMessage({ streaming: false, endedAt: Date.now(), interrupted: true });
+        setSteerQueue([]);
         setAssistantState('done');
-        setBusy(false);
+        setBusyNow(false);
       },
       onDone: () => {
         answerThrottle.flush();
         if (!timerRef.current) {
           setAssistantState('done');
           patchMessage({ streaming: false, endedAt: Date.now() });
-          setBusy(false);
+          finishTurn();
         }
       },
+      onSessionId: (sid) => {
+        steerSessionIdRef.current = sid;
+        setActiveRagSessionId(sid);
+        updateSession(sessionId, (session) => ({ ...session, ragSessionId: session.ragSessionId ?? sid }));
+      },
+      onUserInjected: forkForInjected,
+    };
+    /**
+     * 本轮 SSE 自然结束后的收尾分流（对齐上游 flushSteerAfterTurn/attachSteerFollowUp）：
+     * ① 有挂起补发的消息（new_run 时挂起）→ 作为普通发送补发，其余重新走 steer 排队；
+     * ② 有服务端排队的 after 消息 → 服务端自动拉起追问轮，轮询接流续渲染（busy 保持）；
+     * ③ 无 → 正常结束 busy。
+     */
+    const finishTurn = () => {
+      const chips = steerQueueRef.current;
+      const awaiting = chips.filter((c) => c.awaitingIdleSend);
+      if (awaiting.length) {
+        setSteerQueue((queue) => queue.filter((c) => !c.awaitingIdleSend));
+        setBusyNow(false);
+        sendCore(awaiting[0].content);
+        for (const rest of awaiting.slice(1)) void steerSend(rest.content);
+        return;
+      }
+      if (chips.some((c) => !c.pending && !c.awaitingIdleSend)) {
+        void attachSteerFollowUp(sessionId, { setTarget: (id: number) => { currentAiId = id; }, events: ragEvents });
+        return;
+      }
+      setBusyNow(false);
     };
     return {
       getLastMessageId: () => lastMessageId,
+      getTargetId: () => currentAiId,
       ragEvents,
       chatCallbacks: {
         ...ragEvents,
         onDelta: (delta: string) => ragEvents.onAnswerDelta?.(delta),
         onLocalAnswer: (answer: AiAnswer) => {
           patchMessage({ source: 'local' });
-          streamLocalAnswer(sessionId, { id: aiMsgId } as ChatMsg, answer);
+          streamLocalAnswer(sessionId, { id: currentAiId } as ChatMsg, answer);
         },
       } as ChatCallbacks,
     };
   };
 
+  /** busy 双写：state 供渲染、ref 同步供异步回调即时读取（steer 重试/收尾分流依赖） */
+  const setBusyNow = (value: boolean) => {
+    busyRef.current = value;
+    setBusy(value);
+  };
+
   const send = (text: string) => {
     const query = text.trim();
-    if (!query || busy) return;
+    if (!query || busyRef.current) return;
+    sendCore(query);
+  };
+
+  /** 流式中追加一条消息（steer，对齐上游 handleSteerMsg）：排队显示在输入框上方，
+   *  默认 delivery=after（本轮结束作为追问）；服务端无运行中轮次（new_run）时短重试，
+   *  仍无则回落为普通发送。 */
+  const steerSend = async (text: string) => {
+    const query = text.trim();
+    if (!query) return;
+    const sid = steerSessionIdRef.current;
+    if (!sid) {
+      antdMessage.error('会话尚未就绪，请稍后再试');
+      return;
+    }
+    setInput('');
+    const clientId = `steer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setSteerQueue((queue) => [...queue, { steerId: clientId, clientId, content: query, delivery: 'after', pending: true }]);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise((resolve) => window.setTimeout(resolve, 900));
+      const res = await steerSession(sid, query, 'after');
+      if (res.success && res.status === 'queued') {
+        setSteerQueue((queue) => queue.map((c) => c.clientId === clientId ? { ...c, pending: false, steerId: res.steerId ?? c.steerId } : c));
+        return;
+      }
+      if (!res.success) break;
+      // new_run = 没有运行中的轮次。busy 仍 true（当前流在收尾/追问轮即将拉起）→ 重试；
+      // busy 已 false → 会话空闲，直接补发普通消息
+      if (!busyRef.current) {
+        setSteerQueue((queue) => queue.filter((c) => c.clientId !== clientId));
+        sendCore(query);
+        return;
+      }
+    }
+    setSteerQueue((queue) => queue.filter((c) => c.clientId !== clientId));
+    antdMessage.error('追加消息发送失败，请重试');
+  };
+
+  /** 排队中的 after 消息晋升为 inject：让运行中的轮次立刻读取 */
+  const promoteSteerChip = async (steerId: string) => {
+    const sid = steerSessionIdRef.current;
+    const chip = steerQueueRef.current.find((c) => c.steerId === steerId);
+    if (!chip || chip.pending || chip.promoting || chip.delivery === 'inject' || !sid) return;
+    setSteerQueue((queue) => queue.map((c) => c.steerId === steerId ? { ...c, promoting: true } : c));
+    const res = await promoteSteer(sid, steerId);
+    if (res.status === 'already_injected') {
+      setSteerQueue((queue) => queue.filter((c) => c.steerId !== steerId));
+      return;
+    }
+    if (res.status === 'new_run') {
+      if (busyRef.current) {
+        setSteerQueue((queue) => queue.map((c) => c.steerId === steerId ? { ...c, promoting: false, awaitingIdleSend: true } : c));
+      } else {
+        setSteerQueue((queue) => queue.filter((c) => c.steerId !== steerId));
+        sendCore(chip.content);
+      }
+      return;
+    }
+    setSteerQueue((queue) => queue.map((c) => c.steerId === steerId ? { ...c, promoting: false, delivery: 'inject' } : c));
+  };
+
+  /** 撤回排队消息（已注入的服务端返回 already_injected：同样移除，气泡随后由注入事件落地） */
+  const removeSteerChip = async (steerId: string) => {
+    const chip = steerQueueRef.current.find((c) => c.steerId === steerId);
+    if (!chip || chip.pending || chip.promoting) return;
+    const sid = steerSessionIdRef.current;
+    if (sid) await removeSteer(sid, steerId);
+    setSteerQueue((queue) => queue.filter((c) => c.steerId !== steerId));
+  };
+
+  /** after 队列的追问轮由服务端自动拉起：轮询消息列表发现新的 assistant 消息后接流续渲染
+   *  （对齐上游 attachSteerFollowUp；追问轮的 query 用户行由服务端持久化，气泡以排队芯片内容落地） */
+  const attachSteerFollowUp = async (sessionId: number, api: { setTarget: (id: number) => void; events: RagStreamEvents }) => {
+    const ragSid = steerSessionIdRef.current;
+    if (!ragSid) {
+      setBusyNow(false);
+      return;
+    }
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+      if (!busyRef.current) return; // 会话已切换或已停止，放弃接流
+      const remote = await listRemoteMessages(ragSid, undefined, 20);
+      const rendered = new Set(messagesRef.current.map((m) => m.remoteMessageId).filter(Boolean) as string[]);
+      const freshList = [...remote].reverse().filter((m) => m.role === 'assistant' && !rendered.has(m.id));
+      const fresh = freshList.find((m) => m.is_completed === false) ?? freshList[0];
+      if (!fresh) continue;
+      const chips = steerQueueRef.current.filter((c) => !c.pending && !c.awaitingIdleSend);
+      const userMsgs: ChatMsg[] = chips.map((c) => ({ id: nextMsgId(), role: 'user', content: c.content, streaming: false }));
+      setSteerQueue((queue) => queue.filter((c) => c.pending || c.awaitingIdleSend));
+      if (fresh.is_completed === false) {
+        const contMsg: ChatMsg = { id: nextMsgId(), role: 'ai', content: '', streaming: true, timeline: [], startedAt: Date.now() };
+        updateSession(sessionId, (session) => ({ ...session, messages: [...session.messages, ...userMsgs, contMsg] }));
+        api.setTarget(contMsg.id);
+        setAssistantState('generating');
+        void continueKnowledgeStream(ragSid, fresh.id, api.events);
+      } else {
+        // 追问轮已瞬时完成：直接落一条完整助手消息（剥 <think> 前缀 + 转 <kb/> 徽章）
+        let content = fresh.content ?? '';
+        const thinkMatch = content.match(/^<think>([\s\S]*?)(<\/think>)?/);
+        if (thinkMatch) content = content.slice(thinkMatch[0].length).trim();
+        content = renderInlineKbTags(content).replace(/<kb\b[^>]*$/i, '');
+        const aiMsg: ChatMsg = { id: nextMsgId(), role: 'ai', content, streaming: false, remoteMessageId: fresh.id, endedAt: Date.now() };
+        updateSession(sessionId, (session) => ({ ...session, messages: [...session.messages, ...userMsgs, aiMsg] }));
+        setBusyNow(false);
+      }
+      return;
+    }
+    // 轮询超时兜底：不把输入区卡死
+    setBusyNow(false);
+  };
+
+  const sendCore = (query: string) => {
     const sessionId = active.id;
     shouldFollowRef.current = true;
     const attachmentsForMessage = attachments.map((file) => ({ id: file.remoteId ?? file.localId, name: file.name, size: file.size, status: file.status }));
@@ -566,7 +741,7 @@ useEffect(() => {
     }));
     setInput('');
     setAttachments([]);
-    setBusy(true);
+    setBusyNow(true);
     setAssistantState('understanding');
     const handlers = makeStreamHandlers(sessionId, aiMsg.id);
     void chatWithRag(query, activeRagSessionId ?? active.ragSessionId ?? null, handlers.chatCallbacks, {
@@ -583,7 +758,9 @@ useEffect(() => {
       }
       if (outcome.source === 'rag' && outcome.sessionId && handlers.getLastMessageId()) {
         const artifacts = await listMessageArtifacts(outcome.sessionId, handlers.getLastMessageId());
-        if (artifacts.length) updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === aiMsg.id ? { ...message, artifacts } : message) }));
+        // steer 注入分叉后产物挂在最后一个流式段上（服务端同属一条 assistant 消息）
+        const targetId = handlers.getTargetId();
+        if (artifacts.length) updateSession(sessionId, (session) => ({ ...session, messages: session.messages.map((message) => message.id === targetId ? { ...message, artifacts } : message) }));
       }
     });
   };
@@ -603,7 +780,7 @@ useEffect(() => {
     }
     if (!query.trim()) return;
     shouldFollowRef.current = true;
-    setBusy(true);
+    setBusyNow(true);
     setAssistantState('understanding');
     updateSession(sessionId, (session) => ({
       ...session,
@@ -647,7 +824,7 @@ useEffect(() => {
     if (!ragSessionId || !message.remoteMessageId || busy) return;
     const sessionId = active.id;
     shouldFollowRef.current = true;
-    setBusy(true);
+    setBusyNow(true);
     setAssistantState('generating');
     updateSession(sessionId, (session) => ({
       ...session,
@@ -689,7 +866,8 @@ useEffect(() => {
     }));
   };
 
-  /** 用户点击"停止生成"：中断 RAG SSE 流 + 停掉本地打字机 + 立即结束当前消息 */
+  /** 用户点击"停止生成"：中断 RAG SSE 流 + 停掉本地打字机 + 立即结束当前消息。
+   *  上游语义"停止即停止"：排队中的追加消息一并清空（服务端丢弃 backlog，注入已生效的保留在时间线） */
   const stopGeneration = () => {
     // 1. 中断后端 SSE（abort fetch）
     abortCurrentChat();
@@ -703,8 +881,9 @@ useEffect(() => {
       ...session,
       messages: session.messages.map((message) => message.streaming ? { ...message, streaming: false, endedAt: Date.now() } : message),
     } : session));
+    setSteerQueue([]);
     setAssistantState('done');
-    setBusy(false);
+    setBusyNow(false);
   };
 
   const newSession = () => {
@@ -715,6 +894,8 @@ useEffect(() => {
     setActiveRagSessionId(undefined);
     setAttachments([]);
     setAssistantState('idle');
+    steerSessionIdRef.current = '';
+    setSteerQueue([]);
   };
 
 const deleteSession = (session: ChatSession) => {
@@ -739,7 +920,7 @@ const deleteSession = (session: ChatSession) => {
         <div className="ai-rail-head"><span>对话</span><Button type="text" size="small" icon={<PlusOutlined />} aria-label="新建会话" onClick={newSession} /></div>
         <div className="ai-session-list">
           <div className="ai-session-section-label">最近对话</div>
-          {sessions.map((session) => <div className={`ai-session-item ${session.id === activeSessionId ? 'is-active' : ''}`} key={session.id} onClick={() => { shouldFollowRef.current = true; setActiveSessionId(session.id); setActiveRagSessionId(session.ragSessionId); }}>
+          {sessions.map((session) => <div className={`ai-session-item ${session.id === activeSessionId ? 'is-active' : ''}`} key={session.id} onClick={() => { shouldFollowRef.current = true; setActiveSessionId(session.id); setActiveRagSessionId(session.ragSessionId); steerSessionIdRef.current = session.ragSessionId ?? ''; setSteerQueue([]); }}>
             <MessageOutlined className="ai-session-icon" /><span>{session.title}</span><Button type="text" size="small" icon={<DeleteOutlined />} aria-label="删除会话" onClick={(event) => { event.stopPropagation(); deleteSession(session); }} />
           </div>)}
         </div>
@@ -791,8 +972,25 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
 
         <section className="ai-composer-wrap">
           <AttachmentPreview files={attachments} onRemove={removeAttachment} disabled={busy} />
+          {steerQueue.length > 0 && (
+            <div className="ai-steer-bar">
+              <span className="ai-steer-bar__label">追加中</span>
+              {steerQueue.map((chip) => (
+                <span key={chip.clientId ?? chip.steerId} className={`ai-steer-chip${chip.pending ? ' is-pending' : ''}`} title={chip.content}>
+                  <span className="ai-steer-chip__text">{chip.content}</span>
+                  {chip.delivery === 'after' && !chip.pending && (
+                    <button type="button" className="ai-steer-chip__action" disabled={chip.promoting} onClick={() => promoteSteerChip(chip.steerId)}>{chip.promoting ? '…' : '立即发送'}</button>
+                  )}
+                  {!chip.pending && (
+                    <button type="button" className="ai-steer-chip__action" aria-label="撤回" onClick={() => removeSteerChip(chip.steerId)}>×</button>
+                  )}
+                  {chip.pending && <span className="ai-steer-chip__hint">排队中</span>}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="ai-composer">
-            <Input.TextArea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(input); } }} autoSize={{ minRows: 1, maxRows: 5 }} variant="borderless" disabled={busy} placeholder="直接向模型提问" />
+            <Input.TextArea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); busy ? steerSend(input) : send(input); } }} autoSize={{ minRows: 1, maxRows: 5 }} variant="borderless" placeholder={busy ? '回答生成中，输入内容可追加到本轮对话' : '直接向模型提问'} />
             <div className="ai-composer-tools">
               <div className="ai-composer-left">
                 <AgentPicker agents={availableAgents} value={selectedAgentId} onChange={setSelectedAgentId} disabled={busy || !ragReady()} />
@@ -800,13 +998,14 @@ className={`ai-conversation ${active.messages.length === 0 ? 'is-empty' : ''}`}
                 <Button type="text" className="composer-icon-button" icon={<PaperClipOutlined />} aria-label="上传附件" disabled={busy || !ragReady()} onClick={() => fileInputRef.current?.click()} />
                 <KnowledgeFolderPicker folders={availableKbs} selectedIds={selectedKbIds} onChange={setSelectedKbIds} disabled={busy || !ragReady()} />
               </div>
-              {busy ? (
-                <button type="button" className="ai-stop-btn" aria-label="停止生成" onClick={stopGeneration}>
-                  <StopGlyph />
-                </button>
-              ) : (
-                <Button type="primary" shape="circle" icon={<SendOutlined />} aria-label="发送" disabled={!input.trim()} onClick={() => send(input)} />
-              )}
+              <div className="ai-composer-right">
+                {busy && (
+                  <button type="button" className="ai-stop-btn" aria-label="停止生成" onClick={stopGeneration}>
+                    <StopGlyph />
+                  </button>
+                )}
+                <Button type="primary" shape="circle" icon={<SendOutlined />} aria-label={busy ? '追加发送' : '发送'} disabled={!input.trim()} onClick={() => (busy ? steerSend(input) : send(input))} />
+              </div>
             </div>
           </div>
         </section>

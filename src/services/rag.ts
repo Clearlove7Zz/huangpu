@@ -32,6 +32,11 @@ export interface RagStreamEvents {
   onComplete?: (info: { totalDurationMs?: number; totalSteps?: number }) => void;
   /** 服务端确认停止（response_type=stop） */
   onStop?: () => void;
+  /** 会话 ID 确认（新建会话后立即回传；流式中追加消息 steer 依赖它在首答期间拿到会话 ID） */
+  onSessionId?: (sessionId: string) => void;
+  /** 流式中追加的消息已被接受进运行中的轮次（response_type=user_message_injected，对齐上游 #3123）：
+   *  前端把排队气泡移入消息时间线，并把续答渲染到新的流式段 */
+  onUserInjected?: (info: { steerId: string; content: string; userMessageId?: string; assistantMessageId?: string }) => void;
   onMessageId?: (messageId: string) => void;
   onError?: (message: string) => void;
   /** 用户主动停止（abort 后触发，区别于"自然结束 onDone"，避免触发本地兜底） */
@@ -248,7 +253,8 @@ export async function streamKnowledgeChat(
       currentAbortRef.sessionId = sid;
     }
 
-    // 2. 发起流式问答
+    // 2. 发起流式问答（先回传会话 ID：steer 流式中追加消息在生成期间就要用到）
+    events.onSessionId?.(sid);
     const endpoint = agentEnabled ? 'agent-chat' : 'knowledge-chat';
     const body: Record<string, unknown> = {
       query,
@@ -372,6 +378,9 @@ function handleEvent(ev: SseEvent, events: RagStreamEvents, inlineRefs: InlineRe
       reason?: string;
       message_id?: string;
       assistant_message_id?: string;
+      steer_id?: string;
+      user_message_id?: string;
+      content?: string;
     } | null;
 
     switch (payload.response_type) {
@@ -435,6 +444,19 @@ function handleEvent(ev: SseEvent, events: RagStreamEvents, inlineRefs: InlineRe
       }
       case 'stop': {
         events.onStop?.();
+        break;
+      }
+      case 'user_message_injected': {
+        // 流式中追加的消息被注入运行中的轮次（上游 steer 机制）：data 携带
+        // steer_id / content / user_message_id，用于把排队气泡移入时间线
+        if (dataPayload?.steer_id && typeof dataPayload.content === 'string') {
+          events.onUserInjected?.({
+            steerId: String(dataPayload.steer_id),
+            content: String(dataPayload.content),
+            userMessageId: dataPayload.user_message_id ? String(dataPayload.user_message_id) : undefined,
+            assistantMessageId: dataPayload.message_id ? String(dataPayload.message_id) : undefined,
+          });
+        }
         break;
       }
       case 'session_title':
@@ -601,5 +623,101 @@ export async function fetchChunkContent(chunkId: string): Promise<string | null>
     return content;
   } catch {
     return null;
+  }
+}
+
+// —— 流式中追加消息（steer，对齐上游 v0.8.0 #3123 steer.ts）——
+
+export type SteerDelivery = 'inject' | 'after';
+
+export interface SteerQueueItem {
+  /** 服务端持久 ID（POST /steer 返回后替换客户端临时 ID） */
+  steerId: string;
+  content: string;
+  delivery: SteerDelivery;
+  /** 客户端临时 ID（POST 在途时用于列表 key；服务端应答后保留用于状态渲染） */
+  clientId?: string;
+  /** POST /steer 在途：晋升/撤回禁用（此时没有服务端 ID 可操作） */
+  pending?: boolean;
+  /** 上游返回 new_run 但当前流仍在收尾：挂起，等本轮结束后作为普通发送补发 */
+  awaitingIdleSend?: boolean;
+  promoting?: boolean;
+}
+
+export interface SteerSendResult {
+  success: boolean;
+  /** queued=已入队 | new_run=无运行中轮次（前端回落普通发送） */
+  status?: 'queued' | 'new_run';
+  steerId?: string;
+  delivery?: SteerDelivery;
+  assistantMessageId?: string;
+}
+
+/**
+ * 向正在生成的 agent turn 追加一条用户消息（POST /sessions/:id/steer）。
+ * delivery 'after'（默认）：排队等当前轮结束作为追问；'inject'：在下一个推理轮边界注入运行中的轮次。
+ * 状态 new_run 表示当前没有运行中的轮次，调用方应回落为普通发送。
+ */
+export async function steerSession(sessionId: string, query: string, delivery: SteerDelivery = 'after'): Promise<SteerSendResult> {
+  if (!ragReady() || !sessionId) return { success: false };
+  try {
+    const res = await fetch(`${RAG_CONFIG.baseUrl}/sessions/${sessionId}/steer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...gatewayHeaders() },
+      body: JSON.stringify({ query, channel: 'web', delivery }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { success?: boolean; status?: string; steer_id?: string; delivery?: string; assistant_message_id?: string; error?: string };
+    if (!res.ok) return { success: false };
+    return {
+      success: json.success !== false,
+      status: json.status === 'new_run' ? 'new_run' : 'queued',
+      steerId: json.steer_id,
+      delivery: json.delivery === 'inject' ? 'inject' : 'after',
+      assistantMessageId: json.assistant_message_id,
+    };
+  } catch {
+    return { success: false };
+  }
+}
+
+/** 把排队中的 after 消息晋升为 inject，让运行中的轮次立刻读取 */
+export async function promoteSteer(sessionId: string, steerId: string): Promise<{ status?: string }> {
+  if (!ragReady() || !sessionId || !steerId) return {};
+  try {
+    const res = await fetch(`${RAG_CONFIG.baseUrl}/sessions/${sessionId}/steer/${steerId}/inject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...gatewayHeaders() },
+      body: JSON.stringify({}),
+    });
+    return (await res.json().catch(() => ({}))) as { status?: string };
+  } catch {
+    return {};
+  }
+}
+
+/** 拉取运行中轮次的排队消息（空 = 当前没有进行中的轮次） */
+export async function listSteer(sessionId: string): Promise<{ steer_id: string; content: string; delivery?: string }[]> {
+  if (!ragReady() || !sessionId) return [];
+  try {
+    const res = await fetch(`${RAG_CONFIG.baseUrl}/sessions/${sessionId}/steer`, { headers: gatewayHeaders() });
+    if (!res.ok) return [];
+    const json = (await res.json().catch(() => ({}))) as { data?: { steer_id: string; content: string; delivery?: string }[] };
+    return Array.isArray(json.data) ? json.data : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 撤回排队消息（已注入的返回 already_injected，前端提示后忽略） */
+export async function removeSteer(sessionId: string, steerId: string): Promise<{ status?: string }> {
+  if (!ragReady() || !sessionId || !steerId) return {};
+  try {
+    const res = await fetch(`${RAG_CONFIG.baseUrl}/sessions/${sessionId}/steer/${steerId}`, {
+      method: 'DELETE',
+      headers: gatewayHeaders(),
+    });
+    return (await res.json().catch(() => ({}))) as { status?: string };
+  } catch {
+    return {};
   }
 }

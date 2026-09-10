@@ -582,3 +582,14 @@ button.ai-tree-title:hover .ai-tree-name { color: #e07b39; }
 @keyframes citation-float-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .citation-float__title { flex-shrink: 0; color: #6b3a16; font-size: 12px; font-weight: 600; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .citation-float__body { overflow-y: auto; color: rgba(31,35,40,.72); font-size: 12px; line-height: 19px; white-space: pre-wrap; word-break: break-word; }
+
+/* —— 流式中追加消息（steer）排队芯片条 —— */
+.ai-steer-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; width: min(1080px, 100%); margin: 0 auto; padding: 6px 12px 0; }
+.ai-steer-bar__label { font-size: 12px; color: #8a919f; }
+.ai-steer-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 420px; padding: 3px 10px; border: 1px solid #e5e6eb; border-radius: 999px; background: #f7f8fa; font-size: 12px; color: #4e5969; }
+.ai-steer-chip.is-pending { opacity: .65; }
+.ai-steer-chip__text { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-steer-chip__action { border: 0; background: transparent; color: #e65b00; font-size: 12px; cursor: pointer; padding: 0 2px; }
+.ai-steer-chip__action:disabled { color: #c9cdd4; cursor: default; }
+.ai-steer-chip__hint { color: #86909c; font-size: 12px; }
+.ai-composer-right { display: flex; align-items: center; gap: 8px; }

@@ -34,6 +34,10 @@ const LOW_PRIV_AGENTS = ['builtin-quick-answer'];
 export const PROFIT_AGENT_NAME = '利润研判';
 /** 决策研判（指挥长专属默认，结论式输出；仅指挥长可见） */
 export const DECISION_AGENT_NAME = '决策研判';
+/** 工程/外协/安全角色专属智能体（名称与网关 lib/rbac.mjs 的 agentNameKeywords 对齐） */
+export const ENG_AGENT_NAME = '工程问答';
+export const COORD_AGENT_NAME = '外协问答';
+export const SAFETY_AGENT_NAME = '安全问答';
 
 const KB_ALL = Object.keys(KB_IDS);
 

@@ -28,6 +28,10 @@ export interface ChatCallbacks {
   onComplete?: (info: { totalDurationMs?: number; totalSteps?: number }) => void;
   /** 服务端确认停止 */
   onStop?: () => void;
+  /** 会话 ID 确认（新建会话后立即回传，steer 依赖） */
+  onSessionId?: (sessionId: string) => void;
+  /** 流式中追加的消息已被注入运行中的轮次（steer 机制） */
+  onUserInjected?: (info: { steerId: string; content: string; userMessageId?: string; assistantMessageId?: string }) => void;
   /** 网关对账裁决（demo 后端网关回写：pass=引擎已参与 / reject=拒收+引擎答案） */
   onGatewayAudit?: (audit: { verdict: 'pass' | 'mismatch' | 'reject'; message: string; mismatched?: string[]; engineAnswer?: string }) => void;
   onMessageId?: (messageId: string) => void;
@@ -109,6 +113,8 @@ export async function chatWithRag(
       onToolCall: (toolName, args) => callbacks.onToolCall?.(toolName, args),
       onComplete: (info) => callbacks.onComplete?.(info),
       onStop: () => callbacks.onStop?.(),
+      onSessionId: (sid) => callbacks.onSessionId?.(sid),
+      onUserInjected: (info) => callbacks.onUserInjected?.(info),
       onGatewayAudit: (audit) => callbacks.onGatewayAudit?.(audit),
       onMessageId: (messageId) => callbacks.onMessageId?.(messageId),
       onAbort: () => callbacks.onAbort?.(),
