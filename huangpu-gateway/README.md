@@ -15,8 +15,7 @@
                                        └─ 审计                logs/gateway-audit.jsonl
 
 Agent 模型 ──原生 tool calling──▶ WeKnora MCP client ──streamable HTTP──▶ engine-mcp :18095
-                                                                     （run_scenario / get_baseline /
-                                                                       get_current_status / list_presets）
+                                                                     （run_scenario / list_presets）
 ```
 
 ## 启动
@@ -35,9 +34,9 @@ cd ../huangpu-react && npm run dev   # vite 已把 /api/v1 与 /api/auth 代理�
 
 | 职责 | 实现位置 | 说明 |
 |------|----------|------|
-| ① 认证 + 角色调度 | `lib/auth.mjs` + `lib/rbac.mjs` + `server.mjs` handleQa | demo 登录签发 HMAC 令牌；智能体白名单（内置已全部退场不分配，自定义按名称关键词匹配，白名单外 403）；未指定则按角色默认专属智能体（商务/财务→利润研判、指挥长→决策研判、工程→工程问答、外协→外协问答、安全→安全问答）；知识库按角色显式 kbIds 矩阵过滤（chat 请求体 + 管理接口读列表 + 单库读门禁）；管理写操作仅 kbWrite 角色（商务/财务/全权限）；无利润权限的角色问利润直接 403 |
+| ① 认证 + 角色调度 | `lib/auth.mjs` + `lib/rbac.mjs` + `server.mjs` handleQa | demo 登录签发 HMAC 令牌；智能体白名单（内置已全部退场不分配，自定义按名称关键词匹配，白名单外 403）；未指定则按角色默认专属智能体（商务/财务→利润研判、指挥长→决策研判、工程→工程问答、外协→外协问答、安全→安全问答）；知识库按角色显式 kbIds 矩阵过滤（chat 请求体 + 管理接口读列表 + 单库读门禁）；管理写操作仅 kbWrite 角色（商务/财务/全权限）；无利润权限的角色问利润直接 403。**流式中追加消息（steer）同口径**：POST /sessions/:id/steer 的 query 过同一利润闸（防借插话绕 403），拦截落 deny_profit（steer:true）；列表/撤回/晋升直接透传 |
 | ② 凭据持有 | `.env` + `lib/proxy.mjs` | WeKnora scoped key 只在网关 `.env`（已 gitignore），浏览器仅持网关令牌；引擎 MCP 有独立 X-API-Key 自鉴权（AD-08「MCP 自鉴权」） |
-| ③ 输出对账 | `lib/reconcile.mjs` + `lib/proxy.mjs` proxyQa | **PRD §7.3 原文形态 + AD-09 已生效**："AI 回答出现数字但过程中没有引擎调用记录，判定为模型编造，拒收并退回本地引擎出数"。引擎调用记录 = 上游真实 `tool_call` 事件且工具名命中引擎工具（`run_scenario/get_baseline/get_current_status/list_presets`，含 `mcp_<service>_` 前缀）——KB 工具（如 knowledge_search）不算引擎参与。只判流程完整性，不比对数字内容；回答实时透传，网关不代调不注入 |
+| ③ 输出对账 | `lib/reconcile.mjs` + `lib/proxy.mjs` proxyQa | **PRD §7.3 原文形态 + AD-09 已生效**："AI 回答出现数字但过程中没有引擎调用记录，判定为模型编造，拒收并退回本地引擎出数"。引擎调用记录 = 上游真实 `tool_call` 事件且工具名命中引擎工具（`run_scenario`/`list_presets`，含 `mcp_<service>_` 前缀；正则保留旧工具名兼容历史）——KB 工具（如 knowledge_search）不算引擎参与。只判流程完整性，不比对数字内容；回答实时透传，网关不代调不注入 |
 | ④ 审计 | `server.mjs` audit() | 登录/问答/两类拦截全部落 `logs/gateway-audit.jsonl`（一行一 JSON，含命中的引擎工具名列表） |
 
 对账裁决（`response_type: gateway_audit` 事件回写前端）：
@@ -50,6 +49,15 @@ cd ../huangpu-react && npm run dev   # vite 已把 /api/v1 与 /api/auth 代理�
 
 明确取舍：引擎参与后模型若改数，运行时不拦——内容正确性由 M1 评测脚本（20 题逐位比对）把关（引擎 MCP 绑定已生效，本项防线前置到位）；利润意图识别仍靠关键词正则（决定 403/兜底触发），误判后果仅为横幅噪音，不影响回答透传（demo 题面可控）。
 
+## 流式中追加消息（steer，2026-09-10 同步上游 v0.8.0 #3123）
+
+回答生成中用户可直接补话（前端 WeKnora 对齐：输入框/发送键保持可用，消息以排队芯片显示在输入框上方）：
+
+- **delivery=after（默认）**：排队等本轮结束，服务端自动拉起追问轮（`kickNextRunFromSteerBacklog`），前端轮询 messages/load 发现新未完成 assistant 消息后以 continue-stream 接流。
+- **delivery=inject（前端"立即发送"晋升）**：在下一个推理轮边界注入运行中的轮次，SSE 推 `user_message_injected` 事件，前端封口当前段 → 用户气泡落时间线 → 新续段接流。
+- 网关权限口径：steer 的 query 过与主问答同一利润闸；agent 不可中途更换（无智能体白名单校验，会话归属由上游兜底）。
+- 停止生成即清空排队（上游"停止即停止"语义，服务端同样丢弃 backlog）。
+
 ## 演示脚本（验收五条）
 
 1. **闭环（真实工具调用）**：`ai` 登录（默认已选中「利润推演智能体」）问"新联01钢筋涨8%利润率多少" → 界面出现真实的 `mcp_profit-engine_run_scenario` 工具调用卡片 → 回答 19.59% → 18.46%（引擎逐位数值）→ 绿色对账通过。
@@ -61,7 +69,9 @@ cd ../huangpu-react && npm run dev   # vite 已把 /api/v1 与 /api/auth 代理�
 ## 测试
 
 ```bash
-node test/smoke.mjs      # mock 上游 + 网关，19 项断言（含 knowledge_search 不算引擎参与的回归锁）
+node test/smoke.mjs           # mock 上游 + 网关，26 项断言（含 knowledge_search 不算引擎参与的回归锁）
+node test/role-live-check.mjs # 真链路三场景：安全员库内红线/库外拒答/指挥长引擎推演
+node test/steer-e2e.mjs       # steer 真链路 7 场景：利润闸 403/after 排队/追问轮落地/inject 注入事件
 node test/agent-probe.mjs [agentId] [query]   # 直连 WeKnora 观察 Agent 真实工具调用
 node test/e2e-real.mjs   # 真链路（需 WeKnora + engine-mcp + 网关在线）：pass 链验证 + 首字延迟实测
 ```

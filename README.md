@@ -36,7 +36,10 @@ docker compose up -d          # 前端 80 / app 8080 / docreader / postgres / re
 
 黄埔本地适配（沙箱开关、compose 挂载、NO_PROXY、知识库编辑弹窗等）见该仓库 `HANDOVER.md` 所述条目，
 涉及文件：`docker-compose.yml`、`config/`、`frontend/src/views/knowledge/KnowledgeBaseEditorModal.vue`。
-知识库语料导入用 `kb-import/` 脚本；技能（Skills）经 WeKnora「设置 → 技能管理」注册安装。
+当前基线：本地 main = 官方 v0.8.0（fbaff900，2026-09-09 同步，迁移 90→92）+ 2 个本地适配提交；
+代码回退 tag `pre-upgrade-20260909`。
+知识库语料导入用 `kb-import/` 脚本；技能（Skills）经 WeKnora「设置 → 技能目录」注册安装
+（v0.8.0 起为租户技能目录，宿主 preloaded 目录挂载机制已随上游删除）。
 
 ## 快速启动（本机开发）
 
@@ -61,7 +64,7 @@ AI 问答出"本地演示引擎"横幅而非 RAG 回答）。
 |---|---|
 | [docs/系统架构-后端.md](docs/系统架构-后端.md) | 技术栈、服务拓扑、手绘 SVG 架构图、M0 实测清单 |
 | [docs/UI与功能设计.md](docs/UI与功能设计.md) | 首页 8 模块、各页功能、AI 呈现与对账时序 |
-| [docs/成本估算.md](docs/成本估算.md) | 生产实现 200 人天明细、硬件采购、里程碑分期 |
+| [docs/成本估算.md](docs/成本估算.md) | 生产实现 356 人天明细（v4.5）、硬件与首年运行、里程碑分期 |
 | [部署文档](docs/部署.md) | 本机开发 / 目标机部署 / 局域网共享 / 常见坑 |
 | [huangpu-gateway/README.md](huangpu-gateway/README.md) | 网关对账语义、接口清单、E2E 测试 |
 
