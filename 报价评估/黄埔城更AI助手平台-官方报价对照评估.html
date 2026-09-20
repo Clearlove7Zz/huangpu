@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>黄埔城更AI助手平台 · 对外报价对照评估</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2316324f'/><path d='M8 21 L13 12 L17 17 L20 14 L24 21 Z' fill='%23c0562b'/><rect x='8' y='23' width='16' height='1.6' fill='%23f6f4ee'/></svg>">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>if(typeof echarts==='undefined'){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js"><\/script>')}</script>
+<style>
+:root{
+  --ink:#1b2a3a; --navy:#16324f; --steel:#41607e; --steel2:#6d87a1;
+  --brick:#c0562b; --brick-d:#9c431f; --gold:#b8893a; --green:#2f7d55; --red:#b3382c; --amber:#c47f17;
+  --bg:#f6f4ee; --card:#fffdf8; --line:#e0d9c9; --line2:#cfc6b2;
+  --txt:#26333f; --txt2:#51616f; --txt3:#7b8794;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Noto Sans SC',-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--txt);line-height:1.75;font-size:15px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+h1,h2,h3,h4{font-family:'Noto Serif SC','Songti SC','SimSun',serif;color:var(--ink);line-height:1.35}
+/* ===== Hero ===== */
+.hero{background:linear-gradient(160deg,#132b45 0%,#1b3a59 55%,#23476b 100%);color:#eef2f6;padding:64px 0 56px;position:relative;overflow:hidden;border-bottom:4px solid var(--brick)}
+.hero::after{content:"";position:absolute;right:-120px;top:-120px;width:420px;height:420px;border:1.5px solid rgba(255,255,255,.07);border-radius:50%}
+.hero::before{content:"";position:absolute;right:-40px;top:-40px;width:260px;height:260px;border:1.5px solid rgba(255,255,255,.09);border-radius:50%}
+.hero .wrap{position:relative;z-index:2}
+.kicker{font-size:13px;letter-spacing:.28em;color:#c9d6e2;text-transform:uppercase;margin-bottom:18px;font-weight:500}
+.hero h1{color:#fff;font-size:38px;font-weight:900;letter-spacing:.02em;margin-bottom:14px}
+.hero .sub{font-size:16px;color:#c3d0dd;max-width:820px;margin-bottom:8px}
+.hero .meta{margin-top:22px;font-size:13px;color:#9fb3c6;border-top:1px solid rgba(255,255,255,.14);padding-top:16px;display:flex;flex-wrap:wrap;gap:6px 28px}
+.hero .meta b{color:#dbe5ee;font-weight:500}
+.verdict{margin-top:30px;background:rgba(255,255,255,.07);border-left:4px solid var(--brick);padding:18px 22px;border-radius:0 8px 8px 0;max-width:900px}
+.verdict .vt{font-family:'Noto Serif SC',serif;font-weight:700;font-size:17px;color:#fff;margin-bottom:6px}
+.verdict p{font-size:14.5px;color:#d6e0ea}
+/* ===== KPI cards ===== */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:-38px auto 0;position:relative;z-index:5}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px 18px 16px;box-shadow:0 8px 26px rgba(22,50,79,.10)}
+.kpi .lab{font-size:12.5px;color:var(--txt3);letter-spacing:.05em;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.kpi .num{font-family:'Noto Serif SC',serif;font-weight:900;font-size:31px;color:var(--navy);line-height:1.1}
+.kpi .num small{font-size:15px;font-weight:600;color:var(--steel)}
+.kpi .desc{font-size:12px;color:var(--txt2);margin-top:7px;line-height:1.55}
+.kpi.accent .num{color:var(--brick)}
+.dot{width:8px;height:8px;border-radius:2px;display:inline-block;flex:none}
+.dot.n{background:var(--navy)}.dot.b{background:var(--brick)}.dot.g{background:var(--green)}.dot.a{background:var(--gold)}
+/* ===== Sections ===== */
+section{padding:52px 0 8px}
+.sec-h{display:flex;align-items:baseline;gap:14px;margin-bottom:8px;border-bottom:2px solid var(--navy);padding-bottom:12px}
+.sec-h .no{font-family:'Noto Serif SC',serif;font-size:15px;font-weight:700;color:var(--brick);letter-spacing:.1em}
+.sec-h h2{font-size:25px;font-weight:700}
+.sec-lead{color:var(--txt2);font-size:14px;margin:14px 0 22px;max-width:920px}
+h3{font-size:17.5px;margin:30px 0 12px;padding-left:12px;border-left:4px solid var(--brick)}
+h4{font-size:15px;margin:18px 0 8px;color:var(--navy)}
+p{margin-bottom:10px}
+/* ===== Generic ===== */
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:24px 26px;margin:16px 0;box-shadow:0 2px 10px rgba(22,50,79,.05)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:14px 0;background:var(--card)}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card);margin:16px 0;box-shadow:0 2px 10px rgba(22,50,79,.05)}
+table{margin:0;min-width:760px}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{background:#eef1f4;color:var(--ink);font-weight:700;font-size:13px;white-space:nowrap;border-bottom:2px solid var(--line2)}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.total td{background:#f1ece0;font-weight:700;color:var(--ink);border-top:2px solid var(--line2)}
+tr.sub td{background:#f7f5f0;font-weight:600}
+.tag{display:inline-block;padding:1px 9px;border-radius:20px;font-size:11.5px;font-weight:500;white-space:nowrap;line-height:1.7}
+.tag.ok{background:#e3f1e9;color:var(--green);border:1px solid #b9dcc8}
+.tag.part{background:#fbf0dd;color:#9a6a12;border:1px solid #ecd6ab}
+.tag.gap{background:#f9e5e1;color:var(--red);border:1px solid #eec4bb}
+.tag.diff{background:#e7edf4;color:var(--navy);border:1px solid #c4d3e3}
+.tag.own{background:#f3e9f0;color:#8a4a72;border:1px solid #e0c6d8}
+ul.clean{list-style:none;padding:0}
+ul.clean li{padding:7px 0 7px 22px;position:relative;border-bottom:1px dashed var(--line);font-size:14px}
+ul.clean li:last-child{border-bottom:none}
+ul.clean li::before{content:"";position:absolute;left:2px;top:15px;width:8px;height:8px;background:var(--brick);border-radius:1px;transform:rotate(45deg)}
+.callout{border-radius:8px;padding:16px 20px;margin:16px 0;font-size:14px;border:1px solid}
+.callout.key{background:#fdf3ee;border-color:#e7c3b2;border-left:4px solid var(--brick)}
+.callout.warn{background:#fdf8ec;border-color:#e8d7a8;border-left:4px solid var(--amber)}
+.callout.info{background:#eef3f8;border-color:#c5d5e5;border-left:4px solid var(--steel)}
+.callout.good{background:#eef7f1;border-color:#bdd9c9;border-left:4px solid var(--green)}
+.callout b{color:var(--ink)}
+.bigfig{font-family:'Noto Serif SC',serif;font-weight:900;color:var(--brick)}
+/* generation timeline */
+.gens{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin:20px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.gen{padding:20px 22px;background:var(--card);border-right:1px solid var(--line);position:relative}
+.gen:last-child{border-right:none}
+.gen .gh{font-size:12px;letter-spacing:.1em;color:var(--txt3);margin-bottom:4px}
+.gen .gt{font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;color:var(--ink);margin-bottom:4px}
+.gen .gd{font-size:12.5px;color:var(--txt2)}
+.gen .gp{margin-top:10px;font-size:12.5px}
+.gen .gp div{padding:3px 0;border-bottom:1px dashed var(--line)}
+.gen .gp div:last-child{border:none}
+.gen.now{background:#fdf3ee}
+.gen.now::after{content:"报价口径";position:absolute;top:12px;right:12px;font-size:10.5px;background:var(--brick);color:#fff;padding:2px 8px;border-radius:10px}
+.chart{width:100%;height:380px;margin:8px 0}
+.chart-sm{width:100%;height:340px}
+.legend-note{font-size:12px;color:var(--txt3);margin-top:-6px;margin-bottom:14px}
+/* risk */
+.risk{display:flex;gap:16px;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:var(--card);margin-bottom:12px;align-items:flex-start}
+.risk .rlvl{flex:none;width:56px;text-align:center;border-radius:6px;padding:6px 0;font-size:12px;font-weight:700;color:#fff;line-height:1.4;margin-top:2px}
+.rlvl.p0{background:var(--red)}.rlvl.p1{background:var(--amber)}.rlvl.p2{background:var(--steel)}
+.risk .rbody h4{margin:0 0 4px;font-size:14.5px}
+.risk .rbody p{font-size:13px;color:var(--txt2);margin:0}
+.risk .rbody .imp{font-size:12.5px;color:var(--brick-d);margin-top:5px}
+/* steps */
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:14px 0}
+ol.steps li{counter-increment:s;padding:14px 14px 14px 56px;position:relative;border:1px solid var(--line);border-radius:10px;background:var(--card);margin-bottom:10px;font-size:14px}
+ol.steps li::before{content:counter(s);position:absolute;left:14px;top:14px;width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;font-family:'Noto Serif SC',serif;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px}
+ol.steps li b{color:var(--ink)}
+.foot{margin-top:48px;background:#16283b;color:#9fb3c6;padding:34px 0;font-size:12.5px;line-height:1.9}
+.foot h4{color:#dbe5ee;font-size:13.5px;margin-bottom:8px}
+.foot a{color:#a9c4dd}
+@media(max-width:900px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .grid2,.grid3,.gens{grid-template-columns:1fr}
+  .gen{border-right:none;border-bottom:1px solid var(--line)}
+  .hero h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== HERO ===== -->
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">投标 / 立项 · 成本与报价对照评估</div>
+    <h1>黄埔城更 AI 助手平台 · 对外报价对照评估</h1>
+    <p class="sub">以集团《对外报价清单 v0.4（MaaS 版）》为标尺，逐项核对 docs/ 现有方案文档（PRD、系统架构、UI 设计、成本估算 v4.5、部署）的范围覆盖、成本口径与商务空间。</p>
+    <div class="meta">
+      <span><b>评估标尺</b>：对外报价清单 v0.4，2026-09-08，有效期 30 天</span>
+      <span><b>被评对象</b>：docs/ 共 8 份文档（成本估算 v4.5，2026-09-09）</span>
+      <span><b>评估日期</b>：2026-09-20</span>
+    </div>
+    <div class="verdict">
+      <div class="vt">一句话结论</div>
+      <p>对外报价 <b style="color:#fff">290 万</b> 对内部基准成本约 <b style="color:#fff">106–108 万</b>（按报价的集团 MaaS 口径重算），基准毛利率约 <b style="color:#fff">63%</b>，价格有充足安全垫；但存在 <b style="color:#fff">三个签约前必须澄清的问题</b>——报价范围是"多业务域 AI 助手平台"而 docs 设计的是"利润专项 RAG"（核心的利润推演在报价单中无独立科目）、10 亿 Token 额度对 30 人重上下文问答偏紧、以及报价含税口径未定。同时 docs 内部并存三代架构口径，需统一改版到 MaaS。</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<!-- ===== KPI ===== -->
+<div class="kpis">
+  <div class="kpi"><div class="lab"><span class="dot n"></span>对外报价总额</div><div class="num">290<small> 万元</small></div><div class="desc">建设实施 282 万（A–F）＋硬件运行 8 万（H），含首年 10 亿 Token、电脑端＋手机端</div></div>
+  <div class="kpi"><div class="lab"><span class="dot a"></span>内部基准成本（MaaS 口径）</div><div class="num">107<small> 万元</small></div><div class="desc">区间 105.9–107.6 万：人力约 103.5 万（352 人天）＋硬件运行 2.4–4.1 万</div></div>
+  <div class="kpi accent"><div class="lab"><span class="dot b"></span>基准毛利空间</div><div class="num">183<small> 万元</small></div><div class="desc">毛利率约 63%；悲观人天档（+25%）下毛利率仍约 54%</div></div>
+  <div class="kpi"><div class="lab"><span class="dot g"></span>报价反推综合人天单价</div><div class="num">≈8000<small> 元/人天</small></div><div class="desc">282 万 ÷ 约 352 人天 ≈ 8,011 元；对内部成本单价 3,000 元，约 2.67 倍</div></div>
+</div>
+
+<!-- ===== 1 核心判断 ===== -->
+<section>
+  <div class="sec-h"><span class="no">01</span><h2>核心判断</h2></div>
+  <p class="sec-lead">五条判断按重要性排序，前三条直接影响签约与交付边界。</p>
+  <div class="card">
+    <ul class="clean">
+      <li><b>价格本身站得住，且利润垫厚。</b>报价 23 个收费科目的小计、占比经逐格复算全部勾稽正确（282＋8＝290 万）。按内部成本估算 v4.5 的人天体系换算到 MaaS 口径，基准成本约 107 万，即使人天超支 25%（悲观档约 133 万）毛利率仍有 54%。</li>
+      <li><b>范围存在实质性不对等，这是最大风险。</b>报价标的是"黄埔城更 AI <b>助手平台</b>"——B-03 要按商务/工程/安全/财务多个业务域打包建设首批助手（43 万，清单"需求确认后定"）；而 docs 设计的是"<b>RAG 利润智能系统</b>"：六因子利润推演引擎、数值对账铁律是灵魂，却在报价单 23 个科目中没有任何独立对应项。两边都需要向中间靠。</li>
+      <li><b>10 亿 Token 额度在重 RAG 场景下偏紧，且超额口径是开口的。</b>docs 自述每问上下文 2–5 万 Token；此口径下 10 亿 Token 仅够 30 人每人每天约 3–9 问。报价只写"超出另行协商"，没有单价、没有第二年续费价。</li>
+      <li><b>docs 并存三代架构口径，签约后必须统一。</b>PRD v1 / 1pager / 部署文档仍是"双卡 RTX 6000 本地 GPU"，成本估算 v4.5 已改为"云租 AutoDL 单卡"，报价 v0.4 则是"集团 MaaS、不含任何自建推理 GPU"。若按报价履约，前两份方案的架构章、硬件 BOM、风险登记册均需改版。</li>
+      <li><b>官方承诺的"培训 / 用户文档"在内部估算中没有工作包。</b>报价每个科目备注均含"实施联调、培训与验收配合"，报价说明另承诺约定场次培训与操作文档；成本估算 356 人天中联调、验收有覆盖，但培训和用户操作文档为零，约缺 4–7 人天（1.2–2.1 万）。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===== 2 三代口径 ===== -->
+<section>
+  <div class="sec-h"><span class="no">02</span><h2>三代架构口径并存：签约对象是哪一代，必须先定</h2></div>
+  <p class="sec-lead">同一份 docs 里能找到三个时代的技术路线，硬件、成本、风险结论各不相同。报价 v0.4 属于第三代。</p>
+  <div class="gens">
+    <div class="gen">
+      <div class="gh">第一代 · 2026-08-31</div>
+      <div class="gt">本地双卡私有化</div>
+      <div class="gd">PRD v1（v2.1）、1pager、部署.md</div>
+      <div class="gp">
+        <div>模型：2×RTX 6000 Ada 自建 GPU 机，vLLM 跑 Qwen3.8-27B</div>
+        <div>硬件：GPU 机 5–6 万＋服务机，两机分离</div>
+        <div>风险：vLLM 对混合注意力支持未验证（R1）</div>
+      </div>
+    </div>
+    <div class="gen">
+      <div class="gh">第二代 · 2026-09-07/09</div>
+      <div class="gt">推理上云（AutoDL 租卡）</div>
+      <div class="gd">成本估算 v4.5、架构文档（最新）</div>
+      <div class="gp">
+        <div>模型：云租 PRO 6000 96GB 单卡，约 1.4 万/年</div>
+        <div>硬件：本地仅 1 台应用服务器 2–3.5 万</div>
+        <div>风险：检索上下文出内网，需负责人批准</div>
+      </div>
+    </div>
+    <div class="gen now">
+      <div class="gh">第三代 · 2026-09-08</div>
+      <div class="gt">集团 MaaS（报价口径）</div>
+      <div class="gd">对外报价清单 v0.4</div>
+      <div class="gp">
+        <div>模型：集团 MaaS API，首年赠 10 亿 Token，无 GPU</div>
+        <div>硬件：应用服务器 5 万＋配套 2 万＋运行 1 万</div>
+        <div>风险：额度封顶、超额单价、模型版本受控</div>
+      </div>
+    </div>
+  </div>
+  <div class="callout key"><b>对"数值铁律"是好消息：</b>MaaS 只替换语言/理解层，利润数值仍由本地确定性推演引擎计算、大模型禁止自算（REQ/AD-03），核心架构资产不受模型供应方式变化影响。vLLM 混合注意力这一内部头号技术风险（R1）在 MaaS 口径下直接消失。</div>
+  <div class="callout warn"><b>需要追问集团 MaaS 的能力边界：</b>现方案中 Embedding（bge-m3）、Rerank、MinerU 扫描件 OCR 均依赖自有 GPU。报价 C-01 写明含"对话、<b>文档理解</b>等模型能力"，但未列明是否含向量/重排序接口与额度计量方式——若不含，知识库入库管道仍需本地算力或另购，这是隐藏成本。</div>
+</section>
+<!-- ===== 3 报价构成 vs 成本 ===== -->
+<section>
+  <div class="sec-h"><span class="no">03</span><h2>报价构成与内部成本对照</h2></div>
+  <p class="sec-lead">左：报价 290 万的七大类构成（数据逐格取自报价单，金额与占比均已复算）；右：报价、MaaS 口径基准成本与毛利空间。</p>
+  <div class="grid2">
+    <div class="card"><h4>报价大类金额（万元）与占比</h4><div id="chart1" class="chart-sm"></div></div>
+    <div class="card"><h4>报价 vs 内部成本 vs 毛利（万元）</h4><div id="chart2" class="chart-sm"></div>
+    <div class="legend-note">成本柱取 MaaS 口径中位约 106.7 万；误差线为区间 105.9–107.6 万。悲观人天档（+25%）成本约 133 万。</div></div>
+  </div>
+  <div class="callout info"><b>读法提示：</b>官方按"能力科目"一口价（报价单工作量、单价两列为空），内部按"人天工作包"计价，两者是多对多关系，不能逐行比绝对值；应看<b>范围是否全覆盖</b>与<b>总账毛利</b>。逐科目映射见第 05 节。</div>
+</section>
+
+<!-- ===== 4 MaaS 口径成本调整 ===== -->
+<section>
+  <div class="sec-h"><span class="no">04</span><h2>成本估算 v4.5 → MaaS 口径调整明细</h2></div>
+  <p class="sec-lead">若按报价 v0.4（集团 MaaS）履约，成本估算 v4.5 需要做如下调整。所有数字由 v4.5 明细现算：一线 3,000 元/人天、负责人 2,500 元/人天。</p>
+  <div class="tbl-wrap">
+  <table>
+    <colgroup><col style="width:30%"><col style="width:14%"><col style="width:14%"><col style="width:42%"></colgroup>
+    <thead><tr><th>调整项</th><th class="num">人天</th><th class="num">金额（万）</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>v4.5 基准（人力＋硬件运行）</td><td class="num">356</td><td class="num">108.6–110.3</td><td>人力 104.7 万＋硬件及首年运行 3.9–5.6 万</td></tr>
+      <tr><td>减：vLLM 云端部署（A2）</td><td class="num">−4</td><td class="num">−1.2</td><td>MaaS 免自建推理，FP8 加载/并发配置等工作整体取消</td></tr>
+      <tr><td>减：Embedding/Reranker 自托管（A2）</td><td class="num">−3</td><td class="num">−0.9</td><td>前提：MaaS 提供向量/重排接口；否则保留，须向集团确认</td></tr>
+      <tr><td>减：云端 GPU 开通（B）</td><td class="num">−1</td><td class="num">−0.3</td><td>DevOps 企业账号/首充/合规评估不再需要</td></tr>
+      <tr><td>减：AutoDL 租金＋待机＋备用 API</td><td class="num">—</td><td class="num">−1.56</td><td>GPU 按量约 1.40 万/年＋无卡待机 0.06 万＋API 预留 0.1 万</td></tr>
+      <tr><td>增：MaaS API 接入与联调</td><td class="num">＋2</td><td class="num">＋0.6</td><td>三槽位（对话/文档理解/向量）改 OpenAI 兼容端点、额度与密钥管理、降级链改写</td></tr>
+      <tr><td>增：管理员/用户培训与操作文档</td><td class="num">＋4</td><td class="num">＋1.2</td><td>报价承诺约定场次培训＋操作与部署文档；v4.5 无此工作包（按 4 人天保守估）</td></tr>
+      <tr class="total"><td>MaaS 口径合计</td><td class="num">≈352</td><td class="num">≈105.9–107.6</td><td>人力约 103.5 万＋硬件运行 2.4–4.1 万（服务器＋UPS＋电费）</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout warn"><b>硬件口径要按报价上调配置：</b>报价 H-01 建议 <b>16–32 核 / 64–128GB / SSD 1–2TB</b>（按 4–6 万取中位 5 万），v4.5 估的是 16 核 / 64GB、2–3.5 万。WeKnora 全套（PG/Redis/Neo4j/docreader）＋网关＋推演引擎＋Cube 同机，建议按 32 核 / 128GB / 2TB 询价，实际硬件成本向 4–5 万靠拢——报价 H 类 8 万的代收代付结余将从约 4–5.6 万收窄到约 1–3 万。</div>
+</section>
+
+<!-- ===== 5 逐项映射 ===== -->
+<section>
+  <div class="sec-h"><span class="no">05</span><h2>报价 23 科目 × docs 工作包逐项映射</h2></div>
+  <p class="sec-lead">状态分五档：<span class="tag ok">覆盖</span> docs 有明确工作包且深度相当；<span class="tag part">部分覆盖</span> 有对应但范围/口径需澄清；<span class="tag gap">缺口</span> 报价承诺但 docs 无计价；<span class="tag diff">模式差异</span> 随 MaaS 口径改变；<span class="tag own">内部独有</span> docs 有但报价无科目。</p>
+  <div class="tbl-wrap">
+  <table style="table-layout:fixed;min-width:860px">
+    <colgroup><col style="width:7%"><col style="width:17%"><col style="width:9%"><col style="width:44%"><col style="width:11%"><col style="width:12%"></colgroup>
+    <thead><tr><th>编号</th><th>报价科目</th><th class="num">报价(万)</th><th>docs 对应工作包 / 评估</th><th>状态</th><th>成本对照</th></tr></thead>
+    <tbody>
+      <tr class="sub"><td colspan="6">A 多端应用建设（48 万）</td></tr>
+      <tr><td>A-01</td><td>电脑端应用</td><td class="num">27</td><td>huangpu-react 19 个页面（A1 共 103 前端人天＋AI 配合 4 天），含首页看板、业务展示、登录守卫</td><td><span class="tag ok">覆盖</span></td><td rowspan="3">电脑端＋多端适配对应 A1 主体；手机端单列见下。合计前端成本约 32.1 万（含手机端前为 30.0 万）</td></tr>
+      <tr><td>A-02</td><td>手机端应用</td><td class="num">15</td><td>微信小程序管理层速查版 27 人天（§6.5）：框架登录/指标速查/AI 问答/简表/发布审核</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr><td>A-03</td><td>多端统一体验与权限适配</td><td class="num">6</td><td>布局路由含按角色菜单过滤（5 天工作包内）；小程序复用 RBAC；未单列计价</td><td><span class="tag part">部分覆盖</span></td></tr>
+      <tr class="sub"><td colspan="6">B AI 助手与智能体能力（81 万）——报价最重板块，也是范围分歧核心</td></tr>
+      <tr><td>B-01</td><td>AI 助手统一入口</td><td class="num">7</td><td>AI 问答页（18 天）＋平台级对话浮窗 REQ-03（任意页面呼出、按地块过滤）</td><td><span class="tag ok">覆盖</span></td><td rowspan="4">B 类合计 81 万。docs 对应：问答页 18＋Markdown 对齐 5＋会话服务端 4＋网关 8＋WeKnora 配置 4＋入库 4＋图谱 3＋评测/联调约 8，PM 场景工作另计；成本量级约 20–25 万。<b>但 B-03 助手清单范围需澄清</b></td></tr>
+      <tr><td>B-02</td><td>助手通用能力</td><td class="num">20</td><td>问答/资料导入/结果展示/任务流：会话管理、SSE 八类事件、引用溯源、附件、产物下载</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr><td>B-03</td><td>首批核心业务助手</td><td class="num">43</td><td>报价：按商务/工程/安全/财务业务域<b>打包</b>，清单"需求确认后定"。docs：六角色智能体＋六库 RAG，聚焦利润；网关按角色分配智能体（8 天）</td><td><span class="tag part">部分覆盖</span></td></tr>
+      <tr><td>B-04</td><td>场景调优与试运行</td><td class="num">11</td><td>评测集出题（数值 20＋功能 50 题）、跑批 2 天、越权评测 1 天、端到端联调 5 天、PM 全程调优</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr><td>—</td><td><b>六因子利润推演引擎</b>（报价无科目）</td><td class="num">—</td><td>推演引擎 8 天＋engine-mcp 封装 4 天＋推演页 8 天＋挣值/红线/五情景，约 20 人天；"利润智能"的差异化核心</td><td><span class="tag own">内部独有</span></td><td>约 6 万成本，建议写入 B-03 的 SOW 附件或作增值项，避免交付时"免费送"</td></tr>
+      <tr class="sub"><td colspan="6">C 大模型接入与智能体运行环境（66 万）</td></tr>
+      <tr><td>C-01</td><td>大模型服务接入（含首年 10 亿 Token）</td><td class="num">28.5</td><td>v4.5 对应物为 vLLM 部署 4 天＋AutoDL 1.46 万/年（自托管）；MaaS 下仅 API 接入约 2 人天。Token 按公有云零售同量级仅约 0.1–0.3 万/年</td><td><span class="tag diff">模式差异</span></td><td>该项是集团 MaaS 的定价主体，直接成本极低；毛利与内部结算规则相关</td></tr>
+      <tr><td>C-02</td><td>AI Agent 部署与运行环境</td><td class="num">19.5</td><td>WeKnora 编排部署配置 4 天＋Cube 强隔离沙箱 5 天（DevOps 4＋AI 1）＋网关运行</td><td><span class="tag ok">覆盖</span></td><td rowspan="3">C-03/C-04 docs 做得更深：三值裁决、对账拒收、三级降级、审计对到人；合计对应网关 8＋对账 4＋用户库 3＋监控 2＋降级 2＋备份 3 约 22 人天</td></tr>
+      <tr><td>C-03</td><td>调用管控与审计</td><td class="num">10</td><td>RBAC 三约束＋HMAC＋输出对账（数字无引擎调用即拒收）＋审计落盘＋用户账号库 3 天（user_id 隔离）</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr><td>C-04</td><td>运行稳定性保障</td><td class="num">8</td><td>监控自启 2 天＋三级降级演练 2 天＋备份恢复演练 3 天</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr class="sub"><td colspan="6">D 知识与文件能力（33 万）</td></tr>
+      <tr><td>D-01</td><td>知识库建设（含图谱类能力）</td><td class="num">16.5</td><td>六库划分与入库四道关（AI 4 天＋PM 清洗大头）＋Neo4j 图谱构建 3 天＋图谱链路联调 1 天</td><td><span class="tag ok">覆盖</span></td><td rowspan="3">合计对应入库 4＋图谱 4＋文档管理前端 5＋RAG 联调，PM 数据治理贯穿全程；与报价深度相当</td></tr>
+      <tr><td>D-02</td><td>文件管理建设</td><td class="num">11</td><td>文档管理页 5 天（知识库树/上传/预览/跨库移动）＋WeKnora 自带文件服务；按部门归档与预警依赖台账管道</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr><td>D-03</td><td>知识/文件与助手联动</td><td class="num">5.5</td><td>RAG 检索即主链路：检索片段注入、引用溯源徽章、来源白名单</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr class="sub"><td colspan="6">E 业务应用与数据接入（35 万）</td></tr>
+      <tr><td>E-01</td><td>业务展示与看板（按阶段）</td><td class="num">20</td><td>首页 8＋单项目 10＋进度 7＋成本 7＋现金流 4＋设计 3＋物资 2＋供应商 2＋外协 1＋工作 2＋风险 1＋报表 1＋同步 1 ≈ 49 前端人天</td><td><span class="tag ok">覆盖</span></td><td>页面成本约 14.7 万 vs 售价 20 万</td></tr>
+      <tr><td>E-02</td><td>数据接入与对接（按阶段）</td><td class="num">15</td><td>真实台账管道 4 天＋mock→真实接口切换 10 天（前端 6＋AI 4）＋PM 台账规范/字段核对</td><td><span class="tag part">部分覆盖</span></td><td>报价含"对接甲方现有系统/接口"，范围可能广于台账；报价已注明"按阶段、接口清单甲方配合"</td></tr>
+      <tr class="sub"><td colspan="6">F 平台支撑与安全运维（19 万）</td></tr>
+      <tr><td>F-01</td><td>账号角色权限体系</td><td class="num">5.5</td><td>登录页 3 天＋网关 RBAC＋用户账号库/会话隔离 3 天（2026-09-09 拍板新增）</td><td><span class="tag ok">覆盖</span></td><td rowspan="3">"基础安全加固"无专项人天：公网 HTTPS 配套 3 天在小程序科目；建议把网关加固、密钥管理明确进 F-03</td></tr>
+      <tr><td>F-02</td><td>环境部署上线</td><td class="num">7.5</td><td>Cube 部署 5 天＋部署文档（已有工程版）；测试/生产双环境落地依赖 M2–M3</td><td><span class="tag ok">覆盖</span></td></tr>
+      <tr><td>F-03</td><td>备份监控与基础安全</td><td class="num">6</td><td>备份恢复 3 天＋监控自启 2 天；安全加固散见、未独立计价</td><td><span class="tag part">部分覆盖</span></td></tr>
+      <tr class="sub"><td colspan="6">H 硬件与本地运行环境（8 万）</td></tr>
+      <tr><td>H-01</td><td>本地应用服务器</td><td class="num">5</td><td>v4.5 估 2–3.5 万（16 核/64GB）；报价建议 16–32 核/64–128GB/1–2TB，取中位 5 万</td><td><span class="tag part">部分覆盖</span></td><td rowspan="3">MaaS 口径内部硬件 2.4–4.1 万 vs 报价 8 万；按报价配置采购后结余约 1–3 万。Token 赠送行与 v4.5 的 1.46 万云租互为替代</td></tr>
+      <tr><td>H-02</td><td>配套设施（UPS/备份存储/网络）</td><td class="num">2</td><td>v4.5 仅 UPS 0.3–0.5 万，未计备份存储与网络配件</td><td><span class="tag gap">缺口</span></td></tr>
+      <tr><td>H-03 / H-04</td><td>首年运行保障 / Token 额度赠送</td><td class="num">1 / 0</td><td>电费约 0.06 万/年（仅应用机）；MaaS 下 GPU 租金归零，Token 首年赠送但受 10 亿封顶</td><td><span class="tag diff">模式差异</span></td></tr>
+      <tr class="sub"><td colspan="6">报价"服务说明·不另计价"承诺事项</td></tr>
+      <tr><td>S-1</td><td>实施联调 / 上线支持 / 验收配合</td><td class="num">含</td><td>端到端联调 5 天＋里程碑门禁（负责人 42 天内含演示验收）＋PM 阶段验收</td><td><span class="tag ok">覆盖</span></td><td rowspan="3">培训与用户操作文档是明确缺口，建议补 4–7 人天（1.2–2.1 万）</td></tr>
+      <tr><td>S-2</td><td>约定场次培训＋操作与部署文档</td><td class="num">含</td><td>仅有工程版《部署.md》；<b>无培训人天、无用户操作手册工作包</b></td><td><span class="tag gap">缺口</span></td></tr>
+      <tr><td>S-3</td><td>需求梳理与方案确认配合</td><td class="num">含</td><td>PM 105 天全程＋负责人 42 天评审，覆盖充分</td><td><span class="tag ok">覆盖</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ===== 6 Token ===== -->
+<section>
+  <div class="sec-h"><span class="no">06</span><h2>10 亿 Token 额度够不够：情景测算</h2></div>
+  <p class="sec-lead">口径：30 人 × 250 个工作日；每问 Token 数取 docs 自述的 RAG 上下文 2–5 万（系统提示＋检索片段＋多轮历史＋输出），测算取 3 万/问的中性值。</p>
+  <div class="grid2">
+    <div class="card"><h4>不同使用强度下的年 Token 消耗</h4><div id="chart3" class="chart-sm"></div>
+    <div class="legend-note">红线＝首年赠送额度 10 亿；每人每天 5 问即已触线，10 问超额约 1.25 倍。</div></div>
+    <div class="card">
+      <h4>反推：10 亿额度对应每人每天可问数</h4>
+      <div class="tbl-wrap" style="box-shadow:none;margin:8px 0">
+      <table style="min-width:auto">
+        <thead><tr><th>每问消耗</th><th class="num">可问/人/天</th><th>判断</th></tr></thead>
+        <tbody>
+          <tr><td>1.5 万 Token（轻量短问答）</td><td class="num">≈ 8.9 问</td><td><span class="tag ok">基本够</span></td></tr>
+          <tr><td>3 万 Token（多轮＋知识库片段）</td><td class="num">≈ 4.4 问</td><td><span class="tag part">偏紧</span></td></tr>
+          <tr><td>5 万 Token（长文档/多片段）</td><td class="num">≈ 2.7 问</td><td><span class="tag gap">不够</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="callout info" style="margin:10px 0 0"><b>另一个参照系：</b>docs 成本估算路线 D 按全系统 50 问/天估月费 30–250 元——那是演示期个位数用户口径；30 人正式上线后提问量通常增长一个数量级。按公有云零售价（qwen-plus 输入 0.8 元/输出 2 元每百万 Token）10 亿 Token 仅值约千元级，<b>真正的风险不是钱，而是额度管控与超额单价不透明</b>。</div>
+    </div>
+  </div>
+  <div class="callout warn"><b>签约前应写入合同的 Token 条款：</b>①超额部分单价与计费方式（不能只写"另行协商"）；②"约 30 人"是注册人数还是并发账号，扩容怎么收费；③Embedding/Rerank/文档理解是否共享该额度；④第二年起的续费价格与调价机制；⑤额度用尽时是熔断停服还是按量续通。</div>
+</section>
+<!-- ===== 7 商务测算 ===== -->
+<section>
+  <div class="sec-h"><span class="no">07</span><h2>商务测算：毛利、税金与折扣底线</h2></div>
+  <div class="grid3">
+    <div class="card"><h4>三档人天情景下的毛利</h4>
+      <div class="tbl-wrap" style="box-shadow:none;margin:8px 0"><table style="min-width:auto">
+        <thead><tr><th>情景</th><th class="num">MaaS 成本</th><th class="num">毛利率</th></tr></thead>
+        <tbody>
+          <tr><td>乐观（−20%）</td><td class="num">85–87 万</td><td class="num" style="color:var(--green)">70–71%</td></tr>
+          <tr><td>基准</td><td class="num">106–108 万</td><td class="num" style="color:var(--green)">63%</td></tr>
+          <tr><td>悲观（+25%）</td><td class="num">132–134 万</td><td class="num" style="color:var(--amber)">54–55%</td></tr>
+        </tbody>
+      </table></div>
+      <p style="font-size:12.5px;color:var(--txt2)">人天档沿用 v4.5 三档区间（285/356/444），同口径减 8 天自建工作、加 4 天培训。</p>
+    </div>
+    <div class="card"><h4>税金情景</h4>
+      <p style="font-size:13.5px">报价单注明"<b>含税与否以合同约定为准</b>"。若为不含税价、按软件服务 6% 增值税计：</p>
+      <ul class="clean" style="margin-top:8px">
+        <li>不含税收入约 <b>273.6 万</b>，销项税约 <b>16.4 万</b></li>
+        <li>基准毛利由 183 万降至约 <b>167 万</b>，毛利率约 57%</li>
+        <li>谈判时应先锁定"含税总价"表述</li>
+      </ul>
+    </div>
+    <div class="card"><h4>报价单自身的商务缺口</h4>
+      <ul class="clean" style="margin-top:4px">
+        <li>工作量、单价两列空白，按"项"一口价，SOW 需自行补粒度</li>
+        <li>无付款节点、里程碑回款与质保期条款</li>
+        <li>F 类（平台支撑）仅占 6.6%，运维/安全报价偏薄</li>
+        <li>无第二年续费/运维年费口径</li>
+        <li>报价有效期 30 天（约至 2026-10-08）</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout good"><b>折扣谈判参考：</b>基准成本约 107 万即盈亏平衡线（未计公司管理费、风险准备与资金成本，建议加 15–20% 后约 125 万作为内部审批底线）。换言之报价即便打到约 4.5 折（约 130 万）仍覆盖完全成本＋管理费；硬件 8 万建议按"代收代付、凭票实报"处理，不参与折扣。</div>
+</section>
+
+<!-- ===== 8 风险清单 ===== -->
+<section>
+  <div class="sec-h"><span class="no">08</span><h2>风险与缺口清单（按优先级）</h2></div>
+  <p class="sec-lead">P0＝签约前必须澄清；P1＝开工前要在方案/成本中补齐；P2＝影响交付与续费，可在 M0–M2 关闭。</p>
+
+  <div class="risk"><div class="rlvl p0">P0</div><div class="rbody"><h4>范围不对等：多业务域助手平台 vs 利润专项 RAG</h4><p>B-03（43 万）的助手清单留白（"需求确认后定"），docs 的六因子推演/挣值/红线在报价单无科目。若按字面履约，商务/工程/安全/财务各域助手的数量与深度没有边界；若不写入 SOW，利润推演可能变成免费附赠。</p><div class="imp">影响：交付范围与验收标准。处置：合同附件固化"助手清单＋六库＋19 页＋推演引擎"边界。</div></div></div>
+  <div class="risk"><div class="rlvl p0">P0</div><div class="rbody"><h4>Token 额度与超额口径</h4><p>10 亿 Token 在 3 万人均每天 5 问（3 万/问）时即触线；超额仅写"另行协商"，无单价、无续费价、无熔断规则；Embedding/Rerank/文档理解是否计额未说明。</p><div class="imp">影响：首年可能出现追加费用或停服。处置：第 06 节五项条款进合同。</div></div></div>
+  <div class="risk"><div class="rlvl p0">P0</div><div class="rbody"><h4>含税口径未定</h4><p>"含税与否以合同约定为准"，6% 税差约 16.4 万，直接吃掉约 9% 的毛利。</p><div class="imp">处置：报价确认函中明确含税总价与发票类型。</div></div></div>
+  <div class="risk"><div class="rlvl p1">P1</div><div class="rbody"><h4>docs 三代架构口径需统一改版到 MaaS</h4><p>PRD v1（§7/附录 A/B）、1pager 架构图、部署.md 第 98 行仍写"vLLM 双卡 GPU 机 M2 采购"；成本估算 v4.5 是云租口径。需出 v5.0：删双卡 BOM、删 AutoDL、改 MaaS 接入，R1 风险项替换为 MaaS SLA/额度风险。</p><div class="imp">影响：评审材料自相矛盾会直接被质疑。处置：四份文档同步改版。</div></div></div>
+  <div class="risk"><div class="rlvl p1">P1</div><div class="rbody"><h4>培训与用户操作文档缺口</h4><p>报价每个科目均承诺培训与验收配合，v4.5 的 356 人天中无培训/用户手册工作包。</p><div class="imp">处置：补 4–7 人天（PM/前端），成本估算 v5.0 计入。</div></div></div>
+  <div class="risk"><div class="rlvl p1">P1</div><div class="rbody"><h4>MaaS 能力边界（Embedding/Rerank/OCR）</h4><p>C-01 仅概括"对话、文档理解等"。若集团 MaaS 不提供向量与重排序，知识库入库仍需本地 GPU 或另购服务，MaaS 省成本的结论要打折；扫描件 OCR（现由 MinerU 承担）同样需确认。</p><div class="imp">处置：M0 前拿到集团 MaaS 接口清单与 SLA。</div></div></div>
+  <div class="risk"><div class="rlvl p1">P1</div><div class="rbody"><h4>硬件配置与配套偏低</h4><p>v4.5 服务器 16 核/64GB、UPS 仅 0.3–0.5 万，低于报价建议的 32 核/128GB/2TB 且未计备份存储。</p><div class="imp">处置：按报价配置重新询价，H 类预算按 8 万执行。</div></div></div>
+  <div class="risk"><div class="rlvl p2">P2</div><div class="rbody"><h4>手机端前置条件</h4><p>报价 A-02 形态"H5/小程序实施前确认"；小程序路径需公网 HTTPS、域名备案、政务类目资质（v4.5 已列 [NEED] 但只计人天未计审批周期），备案可能影响 6 个月工期。</p><div class="imp">处置：M2 前启动备案与资质；或先以 H5/内网 VPN 形态交付。</div></div></div>
+  <div class="risk"><div class="rlvl p2">P2</div><div class="rbody"><h4>信创适配与机房</h4><p>报价明确不含"甲方机房基建、信创换卡差额"，docs 也完全未考虑信创。政企/区属项目信创是常见后续要求，可作为二期增项，但需在首轮沟通留痕。服务器落位机房（供电/机柜）同样需甲方落实。</p><div class="imp">处置：列入"不含范围"确认单，避免默认承担。</div></div></div>
+  <div class="risk"><div class="rlvl p2">P2</div><div class="rbody"><h4>二期续费与运营口径</h4><p>双方均不含长期驻场运营（口径一致），但第二年 MaaS 额度费、运维年费、台账数据运营在报价中完全空白，易在首年交付后产生争议。</p><div class="imp">处置：投标阶段即给出续费/运维参考价（可参照 v4.5 云租 1.4 万/年量级与驻场人天报价）。</div></div></div>
+</section>
+
+<!-- ===== 9 行动建议 ===== -->
+<section>
+  <div class="sec-h"><span class="no">09</span><h2>行动建议（按时间顺序）</h2></div>
+  <ol class="steps">
+    <li><b>先定履约模式（立即）。</b>确认是否按 v0.4 集团 MaaS 报价签约。若是，冻结自托管路线讨论，启动 docs 改版：成本估算出 v5.0（MaaS 口径，基准约 106–108 万）、PRD/架构/部署同步删除双卡与 AutoDL 内容。</li>
+    <li><b>范围澄清会＋SOW 附件（报价有效期内，约 10-08 前）。</b>把 B-03 助手清单逐项谈定：六角色智能体、六库、19 个业务页面、六因子利润推演/挣值/红线全部写入交付范围与验收口径；明确 E-02 对接系统清单、手机端形态（小程序/H5）。</li>
+    <li><b>Token 与 MaaS 能力条款落字。</b>第 06 节五项 Token 条款＋接口清单（对话/文档理解/Embedding/Rerank）＋SLA＋第二年续费价，作为 C-01 的合同附件。</li>
+    <li><b>商务条款补齐。</b>锁定含税总价；增加里程碑付款（建议 M0/M1/M2/M3 对应 20/30/30/20）、质保期（建议 1 年）、培训场次与超额培训单价；硬件 8 万约定凭票实报。</li>
+    <li><b>内部成本与排期更新。</b>v5.0 补培训 4–7 人天、硬件按 32 核/128GB/2TB 重询、备案/资质进关键路径；MaaS 接入替代 vLLM 后总人天约 352、日历工期仍受前端瓶颈约束约 6 个月（小程序备案可能拉长，需在 M2 前启动）。</li>
+    <li><b>保留差异化资产的谈判主张。</b>利润推演引擎＋数值对账铁律是相对通用 AI 助手平台的独有卖点，建议在技术述标中单独成章，支撑 B 类 81 万的定价合理性，并为二期利润专题扩展预留接口。</li>
+  </ol>
+</section>
+</div>
+
+<!-- ===== FOOTER ===== -->
+<footer class="foot">
+  <div class="wrap">
+    <h4>数据来源与核验说明</h4>
+    <p>① 报价数据：《黄埔城更AI助手平台-对外报价清单-v0.4-集团MaaS(1).xlsx》全部 3 个子表（对外报价清单/费用汇总/报价说明），23 个收费科目与 7 个大类小计、占比、总计已逐格复算，勾稽全部一致（A–F 282 万＋H 8 万＝290 万）。</p>
+    <p>② 内部成本：docs/成本估算.md v4.5（356 人天、104.7 万人力、硬件运行 3.9–5.6 万、首年 108.6–110.3 万），人天与金额按角色单价（一线 3,000、负责人 2,500 元/人天）重新验算。</p>
+    <p>③ 范围映射：docs/PRD v1（v2.1）、1pager、UI 与功能设计、系统架构-后端、部署.md、飞书 PRD 历史会话记录（2026-09-20 分享）。</p>
+    <p>④ Token 零售价格引自成本估算 v4.5 所载 2026-09 行情（百炼 qwen-plus/qwen-max 公开报价）；Token 消耗为情景测算，实际以 M0 后真实问答日志为准。培训人天、MaaS 接入人天为估算假设，已在正文标注。</p>
+    <p style="margin-top:10px;color:#7e93a7">本报告为内部评估文件，不构成对外报价或合同要约。｜ 生成日期 2026-09-20</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var NAVY='#16324f', BRICK='#c0562b', STEEL='#41607e', GOLD='#b8893a', GREEN='#2f7d55', GREY='#9aa7b4';
+  var font="'Noto Sans SC','Microsoft YaHei',sans-serif";
+  function init(id,opt){var el=document.getElementById(id);if(!el||typeof echarts==='undefined')return;var c=echarts.init(el);c.setOption(opt);window.addEventListener('resize',function(){c.resize()});}
+  /* 图1：报价大类横向柱 */
+  init('chart1',{
+    textStyle:{fontFamily:font},
+    grid:{left:8,right:60,top:10,bottom:20,containLabel:true},
+    tooltip:{trigger:'axis',triggerOn:'click',confine:true,axisPointer:{type:'shadow'},
+      formatter:function(p){return p[0].name+'<br/>'+p[0].value+' 万元（占报价 '+(p[0].value/290*100).toFixed(1)+'%）';}},
+    xAxis:{type:'value',max:90,axisLabel:{formatter:'{value}',color:'#51616f'},splitLine:{lineStyle:{color:'#e8e2d5'}},name:'万元',nameTextStyle:{color:'#7b8794'}},
+    yAxis:{type:'category',data:['H 硬件运行(8)','F 平台支撑(19)','D 知识文件(33)','E 业务数据(35)','A 多端应用(48)','C 模型环境(66)','B AI助手(81)'],
+      axisLabel:{color:'#26333f',fontSize:12},axisLine:{lineStyle:{color:'#cfc6b2'}}},
+    series:[{type:'bar',data:[
+      {value:8,itemStyle:{color:GREY}},{value:19,itemStyle:{color:STEEL}},{value:33,itemStyle:{color:STEEL}},
+      {value:35,itemStyle:{color:STEEL}},{value:48,itemStyle:{color:NAVY}},{value:66,itemStyle:{color:NAVY}},{value:81,itemStyle:{color:BRICK}}],
+      barWidth:17,label:{show:true,position:'right',formatter:function(p){return p.value+' 万';},color:'#26333f',fontSize:12},
+      itemStyle:{borderRadius:[0,3,3,0]}}]
+  });
+  /* 图2：报价 vs 成本 vs 毛利 */
+  init('chart2',{
+    textStyle:{fontFamily:font},
+    grid:{left:8,right:20,top:30,bottom:30,containLabel:true},
+    tooltip:{trigger:'axis',triggerOn:'click',confine:true,axisPointer:{type:'shadow'},formatter:function(p){var s=p[0].name;for(var i=0;i<p.length;i++){s+='<br/>'+p[i].marker+p[i].seriesName+'：'+p[i].value+' 万元';}return s;}},
+    legend:{top:0,textStyle:{color:'#51616f',fontSize:12}},
+    xAxis:{type:'category',data:['对外报价','内部基准成本','基准毛利'],axisLabel:{color:'#26333f',fontSize:12},axisLine:{lineStyle:{color:'#cfc6b2'}}},
+    yAxis:{type:'value',max:300,splitLine:{lineStyle:{color:'#e8e2d5'}},axisLabel:{color:'#51616f'},name:'万元',nameTextStyle:{color:'#7b8794'}},
+    series:[{
+      name:'金额',type:'bar',barWidth:46,
+      data:[
+        {value:290,itemStyle:{color:NAVY}},
+        {value:106.7,itemStyle:{color:GOLD}},
+        {value:183.3,itemStyle:{color:GREEN}}
+      ],
+      label:{show:true,position:'top',formatter:function(p){return p.value+' 万';},color:'#26333f',fontSize:12,fontWeight:'bold'},
+      markLine:{symbol:'none',silent:true,data:[{yAxis:133,lineStyle:{color:'#c47f17',type:'dashed'},label:{formatter:'悲观档成本约133万',color:'#c47f17',fontSize:11,position:'insideEndTop'}}]}
+    }]
+  });
+  /* 图3：Token 情景 */
+  init('chart3',{
+    textStyle:{fontFamily:font},
+    grid:{left:8,right:20,top:30,bottom:30,containLabel:true},
+    tooltip:{trigger:'axis',triggerOn:'click',confine:true,axisPointer:{type:'shadow'},
+      formatter:function(p){return '每人每天 '+p[0].name+'<br/>年消耗 '+p[0].value+' 亿 Token';}},
+    xAxis:{type:'category',data:['3 问','5 问','10 问','20 问'],axisLabel:{color:'#26333f',fontSize:12},axisLine:{lineStyle:{color:'#cfc6b2'}},name:'每人每天提问数',nameGap:24,nameTextStyle:{color:'#7b8794',fontSize:11}},
+    yAxis:{type:'value',splitLine:{lineStyle:{color:'#e8e2d5'}},axisLabel:{color:'#51616f'},name:'亿 Token/年',nameTextStyle:{color:'#7b8794'}},
+    series:[{type:'bar',barWidth:44,
+      data:[
+        {value:6.75,itemStyle:{color:GREEN}},
+        {value:11.25,itemStyle:{color:GOLD}},
+        {value:22.5,itemStyle:{color:BRICK}},
+        {value:45,itemStyle:{color:'#b3382c'}}
+      ],
+      label:{show:true,position:'top',formatter:function(p){return p.value+' 亿';},color:'#26333f',fontSize:12},
+      markLine:{symbol:'none',silent:true,data:[{yAxis:10,lineStyle:{color:'#b3382c',type:'dashed',width:2},label:{formatter:'首年赠送额度 10 亿',color:'#b3382c',fontSize:12,position:'insideEndTop'}}]}
+    }]
+  });
+})();
+</script>
+</body>
+</html>

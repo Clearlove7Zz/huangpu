@@ -10,7 +10,7 @@
   <rect x="70" y="455" width="720" height="280" fill="#ffffff" stroke="#8a8a8a"/>
   <text x="430" y="477" text-anchor="middle" font-size="13" fill="#333">WeKnora（Docker Compose）</text>
   <rect x="850" y="315" width="380" height="470" fill="#ffffff" stroke="#8a8a8a"/>
-  <text x="1075" y="337" text-anchor="middle" font-size="13" fill="#333">云端 GPU（AutoDL 租用）</text>
+  <text x="1075" y="337" text-anchor="middle" font-size="13" fill="#333">集团 MaaS 云服务（报价 C-01，无自建 GPU）</text>
 
   <!-- ========= 节点 ========= -->
   <!-- 浏览器 -->
@@ -18,9 +18,9 @@
   <text x="185" y="78" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">huangpu-react</text>
   <text x="185" y="98" text-anchor="middle" font-size="12.5" fill="#000">React 19 + antd 6.6.0</text>
 
-  <!-- 微信小程序 -->
+  <!-- 手机端（小程序/H5） -->
   <rect x="350" y="58" width="190" height="52" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
-  <text x="445" y="78" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">微信小程序</text>
+  <text x="445" y="78" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">手机端 · 小程序/H5</text>
   <text x="445" y="98" text-anchor="middle" font-size="12.5" fill="#000">管理层速查（uni-app）</text>
 
   <!-- 后端网关 -->
@@ -33,8 +33,9 @@
   <!-- 用户库圆柱（网关自有库，独立 PG 容器，WeKnora compose 之外） -->
   <path d="M193,345 v50 a52,10 0 0 0 104,0 v-50" fill="#ffffff" stroke="#8a8a8a"/>
   <ellipse cx="245" cy="345" rx="52" ry="10" fill="#ffffff" stroke="#8a8a8a"/>
-  <text x="245" y="363" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">PostgreSQL</text>
-  <text x="245" y="381" text-anchor="middle" font-size="12.5" fill="#000">用户账号·登录态</text>
+  <text x="245" y="361" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">PostgreSQL 平台库</text>
+  <text x="245" y="378" text-anchor="middle" font-size="11.5" fill="#000">账号·登录态</text>
+  <text x="245" y="393" text-anchor="middle" font-size="11.5" fill="#000">台账·引擎基线</text>
 
   <!-- 推演引擎 MCP -->
   <rect x="480" y="200" width="300" height="95" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
@@ -75,24 +76,24 @@
 
   <!-- vLLM -->
   <rect x="940" y="345" width="270" height="90" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
-  <text x="1075" y="371" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">vLLM</text>
-  <text x="1075" y="390" text-anchor="middle" font-size="12.5" fill="#000">Qwen3.8-27B FP8</text>
-  <text x="1075" y="409" text-anchor="middle" font-size="12.5" fill="#000">RTX PRO 6000 96GB 单卡</text>
+  <text x="1075" y="371" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">LLM 对话服务</text>
+  <text x="1075" y="390" text-anchor="middle" font-size="12.5" fill="#000">通用大模型 · OpenAI 兼容</text>
+  <text x="1075" y="409" text-anchor="middle" font-size="12.5" fill="#000">首年约 10 亿 Token 额度</text>
 
   <!-- bge-m3 -->
   <rect x="940" y="465" width="270" height="70" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
-  <text x="1075" y="494" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">bge-m3 Embedding</text>
-  <text x="1075" y="514" text-anchor="middle" font-size="12.5" fill="#000">1024 维</text>
+  <text x="1075" y="494" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">Embedding 服务</text>
+  <text x="1075" y="514" text-anchor="middle" font-size="11.5" fill="#000">MaaS 优先；bge-m3 CPU 兜底</text>
 
   <!-- bge-reranker -->
   <rect x="940" y="565" width="270" height="70" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
-  <text x="1075" y="594" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">bge-reranker-v2-m3</text>
-  <text x="1075" y="614" text-anchor="middle" font-size="12.5" fill="#000">自托管 rerank 服务</text>
+  <text x="1075" y="594" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">Rerank 服务</text>
+  <text x="1075" y="614" text-anchor="middle" font-size="11.5" fill="#000">MaaS 优先；reranker CPU 兜底</text>
 
   <!-- MinerU -->
   <rect x="940" y="665" width="270" height="70" rx="3" fill="#ffffff" stroke="#8a8a8a"/>
-  <text x="1075" y="694" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">MinerU 文档解析</text>
-  <text x="1075" y="714" text-anchor="middle" font-size="12.5" fill="#000">PDF / 图片结构化提取（GPU）</text>
+  <text x="1075" y="694" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#000">文档理解 / OCR</text>
+  <text x="1075" y="714" text-anchor="middle" font-size="11.5" fill="#000">MaaS 多模态；docreader CPU 兜底</text>
 
   <!-- ========= 连线（每条独立通道，零交叉） ========= -->
   <g fill="none" stroke="#595959" stroke-width="1.3">
@@ -127,7 +128,7 @@
   <text x="193" y="435" font-size="12" fill="#595959">注入 X-API-Key</text>
   <text x="322" y="320" font-size="12" fill="#595959">MCP http-streamable</text>
   <text x="462" y="490" font-size="12" fill="#595959">Skills 隔离执行</text>
-  <text x="560" y="528" font-size="12" fill="#595959">模型推理调用</text>
+  <text x="540" y="528" font-size="12" fill="#595959">MaaS API（出站 HTTPS，仅上下文出内网）</text>
   <!-- ========= 箭头（显式三角形，不依赖 marker） ========= -->
   <g fill="#595959">
     <polygon points="185,197 181,189 189,189"/>
